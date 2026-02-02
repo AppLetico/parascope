@@ -4,6 +4,16 @@
 # Local repository to profile and compare against upstream PRs
 local_repo: ~/workspace/wombat
 
+# Project description (helps LLM understand what's relevant)
+project:
+  name: Wombat
+  description: |
+    Wombat is an API-first, stateless agent execution platform for production SaaS.
+    It provides workspace-driven agents with governance, observability, and multi-tenant isolation.
+    
+    RELEVANT: Agent orchestration, LLM providers, governance, observability, skills, tools
+    NOT RELEVANT: Messaging channels (Telegram, WhatsApp, Discord), browser automation, personal assistants
+
 # Upstream repositories to monitor
 upstream:
   - repo: openclaw/openclaw
@@ -11,11 +21,11 @@ upstream:
 # Sync settings (handles repos with 1000s of PRs)
 sync:
   state: merged       # Only look at merged PRs
-  max_prs: 100        # Max PRs to fetch per sync
+  max_prs: 3          # Max PRs to fetch per sync (set to 3 for testing)
   fetch_files: true   # Needed for path matching
   since: 90d          # Initial window: last 90 days
   incremental: true   # Only fetch new PRs after first sync
-  eval_batch_size: 25 # Max PRs to evaluate per run (controls LLM costs)
+  eval_batch_size: 3  # Max PRs to evaluate per run (set to 3 for testing)
 
 # Scoring thresholds
 scoring:

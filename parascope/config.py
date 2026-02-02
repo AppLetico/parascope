@@ -69,9 +69,17 @@ class Feature:
 
 
 @dataclass
+class ProjectConfig:
+    """Project description for LLM context."""
+    name: str = ""
+    description: str = ""
+
+
+@dataclass
 class ParascopeConfig:
     """Complete Parascope configuration."""
     local_repo: str | None = None  # Path to local repo (defaults to current git root)
+    project: ProjectConfig = field(default_factory=ProjectConfig)
     upstream: list[UpstreamRepo] = field(default_factory=list)
     sync: SyncConfig = field(default_factory=SyncConfig)
     scoring: ScoringConfig = field(default_factory=ScoringConfig)
@@ -116,6 +124,13 @@ class ParascopeConfig:
         
         # Parse local repo path
         config.local_repo = data.get("local_repo")
+        
+        # Parse project description
+        project_data = data.get("project", {})
+        config.project = ProjectConfig(
+            name=project_data.get("name", ""),
+            description=project_data.get("description", ""),
+        )
         
         # Parse upstream repos
         for repo_data in data.get("upstream", []):

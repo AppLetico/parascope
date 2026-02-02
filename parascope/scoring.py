@@ -316,6 +316,8 @@ def run_llm_analysis(
         matched_features=matched_features,
         local_code_context=local_code_context,
         similarity_results=similarity_results,
+        project_name=config.project.name,
+        project_description=config.project.description,
     )
     
     return analysis.to_dict()

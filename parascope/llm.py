@@ -161,6 +161,8 @@ def build_analysis_prompt(
     matched_features: list[str],
     local_code_context: list[dict[str, str]] | None = None,
     similarity_results: list[dict[str, Any]] | None = None,
+    project_name: str = "",
+    project_description: str = "",
 ) -> str:
     """Build the user prompt for comprehensive PR analysis."""
     # PR summary
@@ -178,8 +180,23 @@ def build_analysis_prompt(
         "dependencies": list(local_profile.get("dependencies", {}).keys()),
     }
     
+    # Build project context section
+    project_section = ""
+    if project_name or project_description:
+        project_section = f"""
+## Local Project Context
+
+**Project:** {project_name or 'Unknown'}
+
+**Description:**
+{project_description or '(No description provided)'}
+
+---
+
+"""
+    
     prompt = f"""\
-## Pull Request
+{project_section}## Pull Request
 
 **Title:** {pr_title}
 
@@ -288,6 +305,8 @@ class LLMClient:
         matched_features: list[str],
         local_code_context: list[dict[str, str]] | None = None,
         similarity_results: list[dict[str, Any]] | None = None,
+        project_name: str = "",
+        project_description: str = "",
     ) -> LLMAnalysisResult:
         """
         Analyze a PR with full context for intelligent decision-making.
@@ -317,6 +336,8 @@ class LLMClient:
             matched_features=matched_features,
             local_code_context=local_code_context,
             similarity_results=similarity_results,
+            project_name=project_name,
+            project_description=project_description,
         )
         
         try:

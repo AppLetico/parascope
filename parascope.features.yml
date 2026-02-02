@@ -1,65 +1,140 @@
 # Parascope Feature Definitions
-# Define features to match against upstream PRs
+# Tailored for Wombat - Agent Execution Platform
+#
+# Wombat focuses on:
+# - Agent orchestration & execution
+# - LLM provider abstraction
+# - Governance (RBAC, budgets, risk)
+# - Observability & tracing
+# - Skill runtime
+#
+# Wombat does NOT care about:
+# - Messaging channels (Telegram, WhatsApp, Discord, etc.)
+# - Browser automation
+# - Personal assistant features
+# - OS-level integrations
 
 features:
-  # Security-related changes
-  security:
+  # Agent execution and orchestration
+  agent_execution:
+    description: Agent lifecycle, execution, and orchestration patterns
     keywords:
-      - security
-      - auth
-      - authentication
-      - authorization
-      - jwt
-      - tls
-      - injection
-      - vulnerability
-      - cve
+      - agent
+      - execution
+      - orchestration
+      - runtime
+      - workspace
+      - session
+      - context
+      - stateless
     paths:
+      - "**/agent/**"
+      - "**/agents/**"
+      - "**/execution/**"
+      - "**/runtime/**"
+      - "**/workspace/**"
+
+  # LLM provider abstraction
+  llm_providers:
+    description: LLM provider integration, abstraction, and switching
+    keywords:
+      - provider
+      - llm
+      - model
+      - anthropic
+      - openai
+      - streaming
+      - completion
+      - tokens
+      - context window
+    paths:
+      - "**/providers/**"
+      - "**/llm/**"
+      - "**/models/**"
+      - "**/*provider*"
+
+  # Governance, safety, and access control
+  governance:
+    description: RBAC, permissions, budgets, risk scoring, audit
+    keywords:
+      - governance
+      - rbac
+      - permission
+      - budget
+      - cost
+      - risk
+      - audit
+      - tenant
+      - isolation
+      - redaction
+    paths:
+      - "**/governance/**"
       - "**/security/**"
       - "**/auth/**"
-      - "**/*auth*.py"
-      - "**/*auth*.ts"
+      - "**/rbac/**"
+      - "**/budget/**"
 
-  # Streaming/real-time features
-  streaming:
+  # Observability and tracing
+  observability:
+    description: Execution traces, logging, replay, debugging
     keywords:
-      - stream
-      - streaming
-      - sse
-      - websocket
-      - real-time
-      - realtime
-      - chunk
-      - flush
+      - trace
+      - tracing
+      - observability
+      - logging
+      - replay
+      - debug
+      - annotation
+      - retention
     paths:
-      - "**/streaming*"
-      - "**/stream*"
-      - "**/*sse*"
+      - "**/tracing/**"
+      - "**/traces/**"
+      - "**/observability/**"
+      - "**/logging/**"
+
+  # Skill system
+  skills:
+    description: Skill registry, versioning, lifecycle, testing
+    keywords:
+      - skill
+      - skills
+      - registry
+      - manifest
+      - lifecycle
+      - version
+      - yaml
+    paths:
+      - "**/skills/**"
+      - "**/skill/**"
+      - "**/*skill*"
 
   # Tool/function calling
   tools:
+    description: Tool definitions, function calling, tool proxy
     keywords:
       - tool
-      - function
+      - tools
       - function_call
       - tool_call
-      - proxy
+      - function calling
     paths:
       - "**/tools/**"
+      - "**/tool/**"
       - "**/*tool*"
-      - "**/*proxy*"
 
-  # API changes
+  # API and HTTP layer
   api:
+    description: HTTP endpoints, request handling, middleware
     keywords:
       - api
       - endpoint
       - route
       - handler
-      - rest
-      - graphql
+      - middleware
+      - fastify
+      - http
     paths:
       - "**/api/**"
       - "**/routes/**"
       - "**/handlers/**"
-      - "**/routers/**"
+      - "**/server/**"
