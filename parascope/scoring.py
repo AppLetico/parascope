@@ -288,8 +288,9 @@ def run_llm_analysis(
     
     # Get local code context for matching files
     local_code_context = []
+    integration_check = None
     try:
-        from .semantic import extract_matching_files
+        from .semantic import extract_matching_files, extract_keywords_from_pr
         
         feature_paths = []
         for feature in config.features:
@@ -313,6 +314,28 @@ def run_llm_analysis(
             {"path": chunk.path, "content": chunk.content[:max_chars]}
             for chunk in local_chunks[:max_files]
         ]
+        
+        # Check for integrations mentioned in PR but missing from local code
+        keywords = extract_keywords_from_pr(pr.title, pr.body)
+        integrations = [k.replace("integration:", "") for k in keywords if k.startswith("integration:")]
+        
+        if integrations:
+            # Search local codebase for integration references
+            all_local_content = " ".join(c.content.lower() for c in local_chunks)
+            readme = local_profile.get("readme", "").lower()
+            deps = str(local_profile.get("dependencies", {})).lower()
+            search_text = f"{all_local_content} {readme} {deps}"
+            
+            missing = [i for i in integrations if i.lower() not in search_text]
+            found = [i for i in integrations if i.lower() in search_text]
+            
+            if missing:
+                integration_check = {
+                    "mentioned_in_pr": integrations,
+                    "found_in_local": found,
+                    "missing_from_local": missing,
+                    "warning": f"PR mentions {', '.join(missing)} but local codebase has no references to it"
+                }
     except Exception:
         pass
     
@@ -327,6 +350,7 @@ def run_llm_analysis(
         similarity_results=similarity_results,
         project_name=config.project.name,
         project_description=config.project.description,
+        integration_check=integration_check,
     )
     
     return analysis.to_dict()

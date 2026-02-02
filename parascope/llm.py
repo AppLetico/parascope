@@ -137,27 +137,37 @@ If the local code already has equivalent functionality (even with different name
 - Set "implementation_overlap": "full" or "partial"
 - Set "decision": "skip" (for full overlap) or "partial" (for partial overlap)
 
-## Security PRs - Extra Scrutiny
+## CRITICAL: Check if Feature/Integration Exists
 
-For security-related PRs, first ask: Does the LOCAL codebase even have the vulnerable feature?
+Before recommending "implement", ask: Does the LOCAL codebase even have this feature?
+
+### Third-Party Integrations
+If the PR mentions ANY of these, check if the local codebase actually uses them:
+- **Messaging**: Telegram, Slack, Discord, WhatsApp, Teams, Signal
+- **Email**: Gmail, Outlook, SendGrid, Mailgun  
+- **Cloud**: AWS, GCP, Azure (specific services)
+- **Databases**: specific DB fixes (MongoDB, PostgreSQL, Redis)
+- **APIs**: specific third-party API integrations
+
+**How to check**: Look at the LOCAL CODE SNIPPETS and project description.
+If you don't see imports, SDKs, or references to that integration → SKIP
 
 Examples:
-- PR fixes "path traversal in media parser" but local codebase has NO media parsing 
-  → SKIP (attack vector doesn't exist)
-- PR fixes "Telegram bot authentication" but local codebase is not a Telegram bot 
-  → SKIP (feature doesn't exist)
-- PR fixes "path traversal" and local codebase reads files from user input 
-  → Check if similar validation already exists
+- PR fixes "Slack media downloads" but local code has NO Slack SDK/imports → SKIP
+- PR fixes "Telegram bot errors" but local code is not a Telegram bot → SKIP
+- PR fixes "MongoDB connection pooling" but local code uses PostgreSQL → SKIP
 
-Then check if the local codebase already has similar protection:
-- Similar validation functions (path, input, URL validation)
-- Sanitization utilities (escape, encode, strip functions)
-- Security modules (auth, security, validation folders)
+### Security PRs
+For security fixes, first ask: Does the LOCAL codebase have the vulnerable feature?
 
-Example: If PR fixes "path traversal in media parser" but:
-1. Local code has no media parsing at all → SKIP (attack vector absent)
-2. Local code has media parsing AND `isPathSafe()` → SKIP (already protected)
-3. Local code has media parsing but NO protection → IMPLEMENT
+- PR fixes "path traversal in media parser" but local has NO media parsing → SKIP
+- PR fixes "LFI vulnerability" but local has no file reading from user input → SKIP
+
+Then check if similar protection already exists in local code.
+
+### General Rule
+If the PR title mentions a specific technology/integration/feature that you don't 
+see evidence of in the local codebase (README, code snippets, dependencies) → SKIP
 
 Respond ONLY with valid JSON in this exact format:
 {
@@ -193,6 +203,7 @@ def build_analysis_prompt(
     similarity_results: list[dict[str, Any]] | None = None,
     project_name: str = "",
     project_description: str = "",
+    integration_check: dict[str, Any] | None = None,
 ) -> str:
     """Build the user prompt for comprehensive PR analysis."""
     # PR summary
@@ -276,15 +287,32 @@ def build_analysis_prompt(
                 prompt += f"  ```\n  {sim.get('local_snippet', '')[:300]}...\n  ```\n"
         prompt += "\n**IMPORTANT**: If similarity is high (>0.8), carefully check if this is already implemented.\n"
     
+    # Add integration check warning if applicable
+    if integration_check and integration_check.get("missing_from_local"):
+        missing = integration_check["missing_from_local"]
+        prompt += f"""
+## ⚠️ INTEGRATION WARNING
+
+This PR mentions: **{', '.join(integration_check.get('mentioned_in_pr', []))}**
+
+**NOT FOUND in local codebase:** {', '.join(missing)}
+
+The local codebase does not appear to use {', '.join(missing)}. 
+If the PR is specifically about {', '.join(missing)} integration/features, 
+you should likely **SKIP** this PR as the integration doesn't exist locally.
+
+"""
+    
     prompt += """
 ## Your Task
 
 Analyze this PR and determine:
-1. Should the local codebase implement these changes?
-2. Is any of this already implemented locally?
-3. What would implementation look like?
+1. Does the local codebase even have the feature/integration this PR is about?
+2. Should the local codebase implement these changes?
+3. Is any of this already implemented locally?
 
 Be conservative - only recommend "implement" for genuinely valuable, non-duplicate changes.
+If the PR is about a specific integration (Slack, Telegram, etc.) that doesn't exist locally, SKIP it.
 """
     
     return prompt
@@ -349,6 +377,7 @@ class LLMClient:
         similarity_results: list[dict[str, Any]] | None = None,
         project_name: str = "",
         project_description: str = "",
+        integration_check: dict[str, Any] | None = None,
     ) -> LLMAnalysisResult:
         """
         Analyze a PR with full context for intelligent decision-making.
@@ -380,6 +409,7 @@ class LLMClient:
             similarity_results=similarity_results,
             project_name=project_name,
             project_description=project_description,
+            integration_check=integration_check,
         )
         
         try:

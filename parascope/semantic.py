@@ -150,6 +150,20 @@ def extract_keywords_from_pr(title: str, body: str | None) -> list[str]:
     
     text = f"{title} {body or ''}".lower()
     
+    # Third-party integrations to detect
+    integration_keywords = [
+        # Messaging platforms
+        "telegram", "slack", "discord", "whatsapp", "teams", "signal",
+        # Email services
+        "gmail", "outlook", "sendgrid", "mailgun", "smtp",
+        # Cloud providers
+        "aws", "gcp", "azure", "s3", "lambda", "cloudflare",
+        # Databases
+        "mongodb", "postgresql", "mysql", "redis", "elasticsearch",
+        # APIs/SDKs
+        "stripe", "twilio", "github", "gitlab", "jira",
+    ]
+    
     # Security-related patterns
     security_keywords = [
         # Vulnerabilities
@@ -169,6 +183,12 @@ def extract_keywords_from_pr(title: str, body: str | None) -> list[str]:
     ]
     
     found = []
+    
+    # Check for integrations first (important for filtering)
+    for keyword in integration_keywords:
+        if keyword.lower() in text:
+            found.append(f"integration:{keyword}")
+    
     for keyword in security_keywords:
         if keyword.lower() in text:
             found.append(keyword)
