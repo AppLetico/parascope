@@ -267,6 +267,40 @@ def compute_import_stats(repo_root: Path | None = None) -> dict[str, Any]:
     return stats
 
 
+def extract_readme(repo_root: Path | None = None, max_chars: int = 4000) -> str | None:
+    """
+    Extract README content from the repository.
+    
+    Looks for README.md, README.rst, README.txt, or README in order.
+    Truncates to max_chars for LLM context efficiency.
+    """
+    if repo_root is None:
+        repo_root = get_repo_root()
+    
+    readme_names = ["README.md", "README.rst", "README.txt", "README", "readme.md"]
+    
+    for name in readme_names:
+        readme_path = repo_root / name
+        if readme_path.exists():
+            try:
+                with open(readme_path, encoding="utf-8", errors="ignore") as f:
+                    content = f.read()
+                
+                # Truncate if too long, but try to cut at a paragraph break
+                if len(content) > max_chars:
+                    # Find a good cut point
+                    cut_point = content.rfind("\n\n", 0, max_chars)
+                    if cut_point < max_chars // 2:
+                        cut_point = max_chars
+                    content = content[:cut_point] + "\n\n... (truncated)"
+                
+                return content
+            except IOError:
+                continue
+    
+    return None
+
+
 def build_profile(repo_root: Path | None = None) -> dict[str, Any]:
     """
     Build a complete profile of the local repository.
@@ -276,6 +310,7 @@ def build_profile(repo_root: Path | None = None) -> dict[str, Any]:
     - file_tree: File structure info
     - dependencies: Package dependencies
     - import_stats: Import/export statistics
+    - readme: README content (for LLM context)
     - timestamp: When the profile was created
     """
     if repo_root is None:
@@ -289,6 +324,7 @@ def build_profile(repo_root: Path | None = None) -> dict[str, Any]:
         "file_tree": scan_file_tree(repo_root),
         "dependencies": {},
         "import_stats": compute_import_stats(repo_root),
+        "readme": extract_readme(repo_root),
         "timestamp": datetime.utcnow().isoformat() + "Z",
     }
     

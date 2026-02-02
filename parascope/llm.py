@@ -181,15 +181,23 @@ def build_analysis_prompt(
     }
     
     # Build project context section
+    # Use README from profile if no explicit description provided
+    readme_content = local_profile.get("readme", "") if local_profile else ""
+    effective_description = project_description or readme_content
+    
     project_section = ""
-    if project_name or project_description:
+    if project_name or effective_description:
+        # Truncate README for prompt efficiency
+        if len(effective_description) > 3000:
+            effective_description = effective_description[:3000] + "\n... (see full README)"
+        
         project_section = f"""
 ## Local Project Context
 
 **Project:** {project_name or 'Unknown'}
 
 **Description:**
-{project_description or '(No description provided)'}
+{effective_description or '(No description provided)'}
 
 ---
 
