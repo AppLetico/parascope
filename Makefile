@@ -1,6 +1,9 @@
 # Parascope Makefile
 # Common development tasks
 
+# Use python3 on macOS, python elsewhere
+PYTHON := $(shell command -v python3 2>/dev/null || echo python)
+
 .PHONY: install dev test lint format check clean help
 
 # Default target
@@ -19,11 +22,11 @@ help:
 
 # Install package in editable mode
 install:
-	pip install -e .
+	$(PYTHON) -m pip install -e .
 
 # Install with dev dependencies
 dev:
-	pip install -e ".[dev]"
+	$(PYTHON) -m pip install -e ".[dev]"
 
 # Run tests
 test:
@@ -55,27 +58,27 @@ clean:
 
 # Initialize parascope in current directory
 init:
-	python -m parascope.cli init
+	$(PYTHON) -m parascope.cli init
 
 # Profile local codebase
 profile:
-	python -m parascope.cli profile
+	$(PYTHON) -m parascope.cli profile
 
 # Sync upstream PRs
 sync:
-	python -m parascope.cli sync
+	$(PYTHON) -m parascope.cli sync
 
 # Evaluate PRs
 evaluate:
-	python -m parascope.cli evaluate
+	$(PYTHON) -m parascope.cli evaluate
 
 # Generate PRDs
 prd:
-	python -m parascope.cli prd
+	$(PYTHON) -m parascope.cli prd
 
 # Show digest
 digest:
-	python -m parascope.cli digest
+	$(PYTHON) -m parascope.cli digest
 
 # Full workflow: profile -> sync -> evaluate -> prd
 run: profile sync evaluate prd
