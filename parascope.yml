@@ -1,0 +1,34 @@
+# Parascope Configuration
+# Monitor upstream PRs and generate relevant PRDs
+
+# Local repository to profile and compare against upstream PRs
+local_repo: ~/workspace/wombat
+
+# Upstream repositories to monitor
+upstream:
+  - repo: openclaw/openclaw
+
+# Sync settings (handles repos with 1000s of PRs)
+sync:
+  state: merged       # Only look at merged PRs
+  max_prs: 100        # Max PRs to fetch per sync
+  fetch_files: true   # Needed for path matching
+  since: 90d          # Initial window: last 90 days
+  incremental: true   # Only fetch new PRs after first sync
+  eval_batch_size: 25 # Max PRs to evaluate per run (controls LLM costs)
+
+# Scoring thresholds
+scoring:
+  min_rule_score: 0.3
+  min_final_score: 0.5
+  keyword_weight: 0.4
+  path_weight: 0.6
+
+# LLM configuration (RECOMMENDED for high-quality results)
+# Without LLM: rule-based only (more noise)
+# With LLM: semantic analysis + "already implemented" detection
+llm:
+  enabled: true      # Set to true and add OPENAI_API_KEY to .env
+  model: gpt-4o
+  temperature: 0.2
+  max_tokens: 3000

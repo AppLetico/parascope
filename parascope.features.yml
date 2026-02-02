@@ -1,0 +1,65 @@
+# Parascope Feature Definitions
+# Define features to match against upstream PRs
+
+features:
+  # Security-related changes
+  security:
+    keywords:
+      - security
+      - auth
+      - authentication
+      - authorization
+      - jwt
+      - tls
+      - injection
+      - vulnerability
+      - cve
+    paths:
+      - "**/security/**"
+      - "**/auth/**"
+      - "**/*auth*.py"
+      - "**/*auth*.ts"
+
+  # Streaming/real-time features
+  streaming:
+    keywords:
+      - stream
+      - streaming
+      - sse
+      - websocket
+      - real-time
+      - realtime
+      - chunk
+      - flush
+    paths:
+      - "**/streaming*"
+      - "**/stream*"
+      - "**/*sse*"
+
+  # Tool/function calling
+  tools:
+    keywords:
+      - tool
+      - function
+      - function_call
+      - tool_call
+      - proxy
+    paths:
+      - "**/tools/**"
+      - "**/*tool*"
+      - "**/*proxy*"
+
+  # API changes
+  api:
+    keywords:
+      - api
+      - endpoint
+      - route
+      - handler
+      - rest
+      - graphql
+    paths:
+      - "**/api/**"
+      - "**/routes/**"
+      - "**/handlers/**"
+      - "**/routers/**"
