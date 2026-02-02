@@ -339,10 +339,30 @@ def sync(repo: str | None, state: str | None, max_prs: int | None, since: str | 
     total_skipped = 0
     
     for upstream in repos_to_sync:
-        click.echo(f"\nSyncing: {upstream.full_name}")
+        click.echo(f"\n{'─' * 60}")
+        click.echo(f"📦 Syncing: {upstream.full_name}")
+        click.echo(f"{'─' * 60}")
         
         # Per-repo filters can override defaults
         pr_state = upstream.filters.get("state", default_state)
+        
+        # Progress callback for real-time updates
+        last_stage = [None]
+        def progress(stage: str, current: int, total: int, message: str):
+            if stage == "fetch" and current == 0:
+                click.echo(f"  ⏳ {message}")
+            elif stage == "fetch" and current > 0:
+                click.echo(f"  ✓ {message}")
+            elif stage == "process":
+                # Show progress every 5 PRs or for small batches
+                if total <= 10 or current % 5 == 0 or current == total:
+                    pct = int(current / total * 100) if total > 0 else 0
+                    bar = "█" * (pct // 5) + "░" * (20 - pct // 5)
+                    click.echo(f"\r  [{bar}] {current}/{total} PRs processed", nl=False)
+                    if current == total:
+                        click.echo()  # Newline at end
+            elif stage == "done":
+                pass  # Handled below
         
         try:
             new_count, updated_count, skipped_count = sync_repo_prs(
@@ -354,19 +374,22 @@ def sync(repo: str | None, state: str | None, max_prs: int | None, since: str | 
                 fetch_files=default_fetch_files,
                 since=default_since,
                 incremental=default_incremental,
+                progress_callback=progress,
             )
             
-            click.echo(f"  New: {new_count} | Updated: {updated_count} | Unchanged: {skipped_count}")
+            click.echo(f"\n  ✅ Done: {new_count} new, {updated_count} updated, {skipped_count} unchanged")
             
             total_new += new_count
             total_updated += updated_count
             total_skipped += skipped_count
             
         except GitHubAPIError as e:
-            click.echo(f"  Error: {e}", err=True)
+            click.echo(f"\n  ❌ Error: {e}", err=True)
             continue
     
-    click.echo(f"\nSync complete: {total_new} new, {total_updated} updated, {total_skipped} unchanged")
+    click.echo(f"\n{'═' * 60}")
+    click.echo(f"📊 Sync Summary: {total_new} new, {total_updated} updated, {total_skipped} unchanged")
+    click.echo(f"{'═' * 60}")
 
 
 @main.command()
@@ -410,9 +433,13 @@ def evaluate(repo: str | None, pr_number: int | None, batch: int | None, force: 
     batch_size = batch or config.sync.eval_batch_size
     
     if not as_json:
-        click.echo(f"Evaluating PRs (profile: {local_profile_sha[:8]})")
+        click.echo(f"\n{'═' * 60}")
+        click.echo(f"🔍 Evaluating PRs")
+        click.echo(f"{'═' * 60}")
+        click.echo(f"  Profile: {local_profile_sha[:8]}")
         if config.llm.enabled:
-            click.echo(f"  LLM: {config.llm.model} (semantic + AI analysis)")
+            click.echo(f"  LLM: {config.llm.model}")
+            click.echo(f"  Mode: semantic + AI analysis (3-stage pipeline)")
             click.echo(f"  Batch limit: {batch_size} PRs")
         else:
             click.echo("  Mode: rule-based only (enable LLM for better accuracy)")
@@ -427,27 +454,38 @@ def evaluate(repo: str | None, pr_number: int | None, batch: int | None, force: 
     if pr_number:
         prs = [pr for pr in prs if pr.number == pr_number]
     
+    # Count already-evaluated PRs upfront
+    pending_prs = []
+    already_evaluated = 0
+    for pr in prs:
+        if not force and pr.head_sha:
+            if store.evaluation_exists(pr.id, local_profile_sha, pr.head_sha):
+                already_evaluated += 1
+                continue
+        pending_prs.append(pr)
+    
+    total_pending = len(pending_prs)
+    to_process = min(total_pending, batch_size)
+    
+    if not as_json:
+        click.echo(f"{'─' * 60}")
+        click.echo(f"  Total PRs in database: {len(prs)}")
+        click.echo(f"  Already evaluated: {already_evaluated}")
+        click.echo(f"  Pending evaluation: {total_pending}")
+        click.echo(f"  Will process: {to_process} (batch limit: {batch_size})")
+        click.echo(f"{'─' * 60}")
+    
     evaluated = []
-    skipped = 0
     batch_limited = 0
     
     # Load full profile data for LLM
     profile_data = profile.profile_data if config.llm.enabled else None
     
-    for pr in prs:
-        # Skip if already evaluated (unless force)
-        if not force and pr.head_sha:
-            if store.evaluation_exists(pr.id, local_profile_sha, pr.head_sha):
-                skipped += 1
-                continue
-        
-        # Check batch limit
-        if len(evaluated) >= batch_size:
-            batch_limited = len(prs) - skipped - len(evaluated)
-            break
-        
+    for i, pr in enumerate(pending_prs[:batch_size], 1):
         if not as_json:
-            click.echo(f"  Analyzing PR #{pr.number}...", nl=False)
+            pct = int(i / to_process * 100) if to_process > 0 else 0
+            click.echo(f"\n  [{i}/{to_process}] PR #{pr.number}: {pr.title[:45]}...")
+            click.echo(f"      ⏳ Analyzing...", nl=False)
         
         files = store.get_pr_files(pr.id)
         result = evaluate_pr(
@@ -477,45 +515,68 @@ def evaluate(repo: str | None, pr_number: int | None, batch: int | None, force: 
             })
             
             if not as_json:
-                icon = {"relevant": "✓", "maybe": "?", "skip": "✗"}.get(result.final_decision, " ")
-                click.echo(f" [{icon}] {result.final_decision} (conf: {result.llm_confidence:.2f})")
+                icon = {"relevant": "✅", "maybe": "⚠️", "skip": "❌"}.get(result.final_decision, "  ")
+                conf_pct = int(result.llm_confidence * 100)
+                click.echo(f"\r      {icon} {result.final_decision.upper()} ({conf_pct}% confidence)")
+                if result.llm_reasoning:
+                    click.echo(f"      💬 {result.llm_reasoning[:70]}")
+    
+    # Calculate remaining
+    batch_limited = total_pending - len(evaluated)
     
     if as_json:
         click.echo(json.dumps({
             "evaluated": evaluated,
-            "skipped": skipped,
+            "skipped": already_evaluated,
             "batch_limited": batch_limited,
             "profile_sha": local_profile_sha,
         }, indent=2))
     else:
-        click.echo(f"\nEvaluated: {len(evaluated)} PRs")
-        click.echo(f"Skipped: {skipped} (already evaluated)")
-        if batch_limited > 0:
-            click.echo(f"Remaining: {batch_limited} PRs (batch limit reached)")
-            click.echo(f"  Run again to continue, or use --batch N for larger batches")
-        
         # Summary by decision
         implement = [r for r in evaluated if r["llm_decision"] == "implement"]
         partial = [r for r in evaluated if r["llm_decision"] == "partial"]
         skip_prs = [r for r in evaluated if r["llm_decision"] == "skip"]
+        prd_ready = [r for r in evaluated if r["should_prd"]]
+        
+        click.echo(f"\n{'═' * 60}")
+        click.echo(f"📊 Evaluation Summary")
+        click.echo(f"{'═' * 60}")
+        click.echo(f"  Evaluated this run: {len(evaluated)}")
+        click.echo(f"  Previously evaluated: {already_evaluated}")
+        if batch_limited > 0:
+            click.echo(f"  Remaining (batch limit): {batch_limited}")
+        
+        click.echo(f"\n  📈 Results:")
+        click.echo(f"      ✅ Implement: {len(implement)}")
+        click.echo(f"      ⚠️  Partial:   {len(partial)}")
+        click.echo(f"      ❌ Skip:      {len(skip_prs)}")
+        click.echo(f"      📝 PRD-ready: {len(prd_ready)}")
         
         if implement:
-            click.echo(f"\n✓ Implement ({len(implement)}):")
+            click.echo(f"\n{'─' * 60}")
+            click.echo(f"✅ RECOMMENDED TO IMPLEMENT ({len(implement)})")
+            click.echo(f"{'─' * 60}")
             for r in sorted(implement, key=lambda x: -x["llm_confidence"]):
-                click.echo(f"    PR #{r['number']}: {r['title'][:45]}")
-                click.echo(f"      Confidence: {r['llm_confidence']:.0%} | {r['llm_reasoning'][:60]}")
+                conf_pct = int(r['llm_confidence'] * 100)
+                click.echo(f"  PR #{r['number']}: {r['title'][:50]}")
+                click.echo(f"    Confidence: {conf_pct}%")
+                if r['llm_reasoning']:
+                    click.echo(f"    Reason: {r['llm_reasoning'][:65]}")
+                click.echo()
         
         if partial:
-            click.echo(f"\n? Partial ({len(partial)}):")
-            for r in partial:
-                click.echo(f"    PR #{r['number']}: {r['title'][:45]}")
-                click.echo(f"      Confidence: {r['llm_confidence']:.0%} | {r['llm_reasoning'][:60]}")
+            click.echo(f"\n{'─' * 60}")
+            click.echo(f"⚠️  PARTIAL RELEVANCE ({len(partial)})")
+            click.echo(f"{'─' * 60}")
+            for r in partial[:5]:  # Limit to 5
+                conf_pct = int(r['llm_confidence'] * 100)
+                click.echo(f"  PR #{r['number']}: {r['title'][:50]} ({conf_pct}%)")
         
-        if skip_prs and len(skip_prs) <= 5:
-            click.echo(f"\n✗ Skip ({len(skip_prs)}):")
-            for r in skip_prs:
-                reason = r['llm_reasoning'][:50] if r['llm_reasoning'] else "Low relevance"
-                click.echo(f"    PR #{r['number']}: {reason}")
+        if batch_limited > 0:
+            click.echo(f"\n💡 Tip: Run `parascope evaluate` again to process {batch_limited} more PRs")
+        
+        if prd_ready:
+            click.echo(f"\n💡 Tip: Run `parascope prd` to generate {len(prd_ready)} PRD document(s)")
 
 
 @main.command()

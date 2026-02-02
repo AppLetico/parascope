@@ -330,6 +330,7 @@ def sync_repo_prs(
     fetch_files: bool = True,
     since: str | None = None,
     incremental: bool = True,
+    progress_callback: callable | None = None,
 ) -> tuple[int, int, int]:
     """
     Sync PRs from a GitHub repository to the store.
@@ -343,11 +344,16 @@ def sync_repo_prs(
         fetch_files: Whether to fetch file lists
         since: Only sync PRs after this date (ISO or relative like "90d")
         incremental: If True, use last sync watermark as cutoff
+        progress_callback: Optional callback(stage, current, total, message)
     
     Returns:
         Tuple of (new_count, updated_count, skipped_count)
     """
     from .store import Store
+    
+    def report(stage: str, current: int, total: int, message: str = ""):
+        if progress_callback:
+            progress_callback(stage, current, total, message)
     
     # Ensure repo exists in store
     repo = store.upsert_upstream_repo(repo_name)
@@ -366,6 +372,8 @@ def sync_repo_prs(
     else:
         effective_since = since
     
+    report("fetch", 0, 0, "Fetching PR list from GitHub API...")
+    
     # Fetch PRs from GitHub with date filter
     prs = client.list_pulls(
         repo_name,
@@ -374,19 +382,26 @@ def sync_repo_prs(
         since=effective_since,
     )
     
+    total_prs = len(prs)
+    report("fetch", total_prs, total_prs, f"Found {total_prs} PRs")
+    
     new_count = 0
     updated_count = 0
     skipped_count = 0
     last_updated = None
     
-    for gh_pr in prs:
+    for i, gh_pr in enumerate(prs, 1):
         # Check if PR already exists
         existing = store.get_pull_request(repo.id, gh_pr.number)
         
         # Skip if no changes (same head_sha)
         if existing and existing.head_sha == gh_pr.head_sha:
             skipped_count += 1
+            report("process", i, total_prs, f"PR #{gh_pr.number} unchanged")
             continue
+        
+        action = "Updating" if existing else "Adding"
+        report("process", i, total_prs, f"{action} PR #{gh_pr.number}: {gh_pr.title[:40]}...")
         
         # Upsert PR
         pr = store.upsert_pull_request(
@@ -415,6 +430,7 @@ def sync_repo_prs(
         
         # Fetch files if needed
         if fetch_files:
+            report("files", i, total_prs, f"Fetching files for PR #{gh_pr.number}...")
             files = client.get_pull_files(repo_name, gh_pr.number)
             store.save_pr_files(pr.id, [
                 {"path": f.path, "additions": f.additions, "deletions": f.deletions}
@@ -423,5 +439,7 @@ def sync_repo_prs(
     
     # Update repo sync watermark
     store.update_repo_sync_time(repo.id, last_updated)
+    
+    report("done", total_prs, total_prs, "Sync complete")
     
     return new_count, updated_count, skipped_count
