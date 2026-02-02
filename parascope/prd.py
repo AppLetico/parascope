@@ -55,7 +55,8 @@ def get_prd_dir(repo_name: str | None = None) -> Path:
     prd_dir = get_parascope_dir() / "prd"
     if repo_name:
         # Sanitize repo name for filesystem
-        safe_name = repo_name.replace("/", "_")
+        # Use hyphen separator for cleaner folder names (e.g., "openclaw-repo")
+        safe_name = repo_name.replace("/", "-")
         prd_dir = prd_dir / safe_name
     prd_dir.mkdir(parents=True, exist_ok=True)
     return prd_dir
