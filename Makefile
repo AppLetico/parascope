@@ -10,14 +10,24 @@ PYTHON := $(shell command -v python3 2>/dev/null || echo python)
 help:
 	@echo "Parascope Development Commands"
 	@echo ""
-	@echo "  make install    Install package (editable)"
-	@echo "  make dev        Install with dev dependencies"
-	@echo "  make test       Run unit tests"
-	@echo "  make lint       Run linter (ruff check)"
-	@echo "  make format     Format code (ruff format)"
-	@echo "  make check      Run lint + format check + tests"
-	@echo "  make clean      Remove build artifacts"
-	@echo "  make init       Initialize parascope in current dir"
+	@echo "  make install      Install package (editable)"
+	@echo "  make dev          Install with dev dependencies"
+	@echo "  make test         Run unit tests"
+	@echo "  make lint         Run linter (ruff check)"
+	@echo "  make format       Format code (ruff format)"
+	@echo "  make check        Run lint + format check + tests"
+	@echo "  make clean        Remove build artifacts"
+	@echo ""
+	@echo "Parascope Workflow Commands"
+	@echo ""
+	@echo "  make run          Incremental: profile -> sync -> evaluate (1 batch) -> prd"
+	@echo "  make run-full     Full: profile -> sync-full -> evaluate-all -> prd"
+	@echo "  make sync         Sync PRs (incremental, only new since last sync)"
+	@echo "  make sync-full    Sync PRs (full, ignores watermark)"
+	@echo "  make evaluate     Evaluate PRs (one batch)"
+	@echo "  make evaluate-all Evaluate all pending PRs (loops until done)"
+	@echo "  make prd          Generate PRD documents"
+	@echo "  make digest       Show PR digest"
 	@echo ""
 
 # Install package in editable mode
@@ -64,13 +74,24 @@ init:
 profile:
 	$(PYTHON) -m parascope.cli profile
 
-# Sync upstream PRs
+# Sync upstream PRs (incremental - only new since last sync)
 sync:
 	$(PYTHON) -m parascope.cli sync
 
-# Evaluate PRs
+# Sync all PRs (full - ignores watermark, uses since window)
+sync-full:
+	$(PYTHON) -m parascope.cli sync --full
+
+# Evaluate PRs (one batch)
 evaluate:
 	$(PYTHON) -m parascope.cli evaluate
+
+# Evaluate all pending PRs (loops until done)
+evaluate-all:
+	@while $(PYTHON) -m parascope.cli evaluate 2>&1 | grep -q "Remaining"; do \
+		echo "Processing next batch..."; \
+	done
+	@echo "All PRs evaluated"
 
 # Generate PRDs
 prd:
@@ -80,6 +101,10 @@ prd:
 digest:
 	$(PYTHON) -m parascope.cli digest
 
-# Full workflow: profile -> sync -> evaluate -> prd
+# Incremental workflow: profile -> sync (incremental) -> evaluate (one batch) -> prd
 run: profile sync evaluate prd
 	@echo "Parascope workflow complete"
+
+# Full workflow: profile -> sync (full) -> evaluate (all) -> prd
+run-full: profile sync-full evaluate-all prd
+	@echo "Parascope full workflow complete"
