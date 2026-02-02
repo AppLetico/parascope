@@ -139,22 +139,129 @@ def read_local_files(repo_root: Path) -> list[CodeChunk]:
     return chunks
 
 
+def extract_keywords_from_pr(title: str, body: str | None) -> list[str]:
+    """
+    Extract security/concept keywords from PR title and body.
+    
+    These keywords help find conceptually related code even when
+    file paths don't match.
+    """
+    import re
+    
+    text = f"{title} {body or ''}".lower()
+    
+    # Security-related patterns
+    security_keywords = [
+        # Vulnerabilities
+        "path traversal", "directory traversal", "lfi", "rfi",
+        "injection", "xss", "csrf", "ssrf", "sqli",
+        "sanitize", "validate", "escape", "encode",
+        # Path security
+        "isPathSafe", "sanitizePath", "path.resolve", "path.join",
+        "allowlist", "blocklist", "whitelist", "blacklist",
+        "../", "..\\", "absolute path", "relative path",
+        # Auth/security
+        "authentication", "authorization", "permission", "rbac",
+        "token", "jwt", "session", "credential",
+        # General patterns
+        "security", "vulnerability", "exploit", "attack",
+        "prevent", "restrict", "limit", "guard",
+    ]
+    
+    found = []
+    for keyword in security_keywords:
+        if keyword.lower() in text:
+            found.append(keyword)
+    
+    # Also extract technical terms from the title
+    # Look for function-like patterns: word(, isWord, validateWord, etc.
+    technical_patterns = [
+        r'\b(is[A-Z]\w+)',      # isPathSafe, isValid, etc.
+        r'\b(validate\w*)',     # validate, validatePath, etc.
+        r'\b(sanitize\w*)',     # sanitize, sanitizePath, etc.
+        r'\b(check\w*)',        # checkPath, checkPermission, etc.
+        r'\b(prevent\w*)',      # preventInjection, etc.
+        r'\b(restrict\w*)',     # restrictAccess, etc.
+    ]
+    
+    for pattern in technical_patterns:
+        matches = re.findall(pattern, title + " " + (body or ""), re.IGNORECASE)
+        found.extend(matches)
+    
+    return list(set(found))
+
+
+def search_code_by_keywords(
+    repo_root: Path,
+    keywords: list[str],
+    max_files: int = 10,
+) -> list[CodeChunk]:
+    """
+    Search local codebase for files containing security/concept keywords.
+    
+    This finds conceptually related code even when file paths don't match.
+    For example, if a PR fixes "path traversal", this will find local files
+    that also deal with path traversal prevention.
+    """
+    import re
+    
+    all_chunks = read_local_files(repo_root)
+    scored_chunks: list[tuple[CodeChunk, int]] = []
+    
+    for chunk in all_chunks:
+        content_lower = chunk.content.lower()
+        score = 0
+        
+        for keyword in keywords:
+            keyword_lower = keyword.lower()
+            # Count occurrences
+            if keyword_lower in content_lower:
+                score += content_lower.count(keyword_lower)
+            
+            # Bonus for function/class definitions containing the keyword
+            if re.search(rf'\b(function|def|class)\s+\w*{re.escape(keyword_lower)}\w*', 
+                        content_lower):
+                score += 5
+            
+            # Bonus for security-focused files
+            if any(sec in chunk.path.lower() for sec in ['security', 'auth', 'validate', 'sanitize']):
+                score += 3
+        
+        if score > 0:
+            scored_chunks.append((chunk, score))
+    
+    # Sort by score descending, take top matches
+    scored_chunks.sort(key=lambda x: -x[1])
+    
+    return [chunk for chunk, _ in scored_chunks[:max_files]]
+
+
 def extract_matching_files(
     repo_root: Path,
     pr_files: list[str],
     feature_paths: list[str],
+    pr_title: str = "",
+    pr_body: str | None = None,
 ) -> list[CodeChunk]:
     """
-    Extract local files that match PR file patterns or feature path globs.
+    Extract local files that match PR patterns via multiple strategies:
     
-    This provides focused context for LLM analysis.
+    1. Path matching - same filename or path structure
+    2. Feature glob matching - matches configured feature paths
+    3. Keyword search - finds conceptually related code (NEW)
+    
+    This helps catch cases where the same functionality exists
+    in different file paths (e.g., security fix in media/parse.ts
+    vs security/index.ts).
     """
     import fnmatch
     import re
     
     all_chunks = read_local_files(repo_root)
+    matched_paths = set()
     matched = []
     
+    # Strategy 1 & 2: Path and glob matching
     for chunk in all_chunks:
         # Check if local file matches any PR file pattern
         for pr_file in pr_files:
@@ -163,12 +270,16 @@ def extract_matching_files(
             local_name = Path(chunk.path).name
             
             if pr_name == local_name:
-                matched.append(chunk)
+                if chunk.path not in matched_paths:
+                    matched.append(chunk)
+                    matched_paths.add(chunk.path)
                 break
             
             # Match by path suffix (e.g., "auth/handler.py" matches "src/auth/handler.py")
             if chunk.path.endswith(pr_file) or pr_file.endswith(chunk.path):
-                matched.append(chunk)
+                if chunk.path not in matched_paths:
+                    matched.append(chunk)
+                    matched_paths.add(chunk.path)
                 break
         else:
             # Check feature path globs
@@ -180,11 +291,26 @@ def extract_matching_files(
                     regex_pattern = regex_pattern.replace("*", "[^/]*")
                     regex_pattern = f"^{regex_pattern}$"
                     if re.match(regex_pattern, chunk.path):
-                        matched.append(chunk)
+                        if chunk.path not in matched_paths:
+                            matched.append(chunk)
+                            matched_paths.add(chunk.path)
                         break
                 elif fnmatch.fnmatch(chunk.path, pattern):
-                    matched.append(chunk)
+                    if chunk.path not in matched_paths:
+                        matched.append(chunk)
+                        matched_paths.add(chunk.path)
                     break
+    
+    # Strategy 3: Keyword-based search (NEW)
+    # This finds conceptually related code even when paths don't match
+    if pr_title or pr_body:
+        keywords = extract_keywords_from_pr(pr_title, pr_body)
+        if keywords:
+            keyword_matches = search_code_by_keywords(repo_root, keywords, max_files=5)
+            for chunk in keyword_matches:
+                if chunk.path not in matched_paths:
+                    matched.append(chunk)
+                    matched_paths.add(chunk.path)
     
     return matched
 

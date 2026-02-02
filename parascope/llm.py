@@ -123,11 +123,41 @@ You will receive:
 - Relevant local code snippets for comparison
 - Semantic similarity results (if any overlaps detected)
 
-CRITICAL: Be conservative. Only recommend "implement" if:
-- The PR introduces something genuinely useful
-- It's NOT already implemented in the local codebase
-- It aligns with the local architecture
-- The effort is justified by the benefit
+## CRITICAL: Check for Existing Implementations
+
+BEFORE recommending "implement", carefully examine the LOCAL CODE SNIPPETS provided.
+Look for:
+- Functions with similar names (e.g., if PR adds "isValidPath", check for "isPathSafe", "validatePath", "sanitizePath")
+- Similar logic patterns (e.g., path traversal checks, input validation, sanitization)
+- Comments referencing the same vulnerability or feature
+- Security hardening that addresses the same attack vector
+
+If the local code already has equivalent functionality (even with different names/paths):
+- Set "already_implemented": true
+- Set "implementation_overlap": "full" or "partial"
+- Set "decision": "skip" (for full overlap) or "partial" (for partial overlap)
+
+## Security PRs - Extra Scrutiny
+
+For security-related PRs, first ask: Does the LOCAL codebase even have the vulnerable feature?
+
+Examples:
+- PR fixes "path traversal in media parser" but local codebase has NO media parsing 
+  → SKIP (attack vector doesn't exist)
+- PR fixes "Telegram bot authentication" but local codebase is not a Telegram bot 
+  → SKIP (feature doesn't exist)
+- PR fixes "path traversal" and local codebase reads files from user input 
+  → Check if similar validation already exists
+
+Then check if the local codebase already has similar protection:
+- Similar validation functions (path, input, URL validation)
+- Sanitization utilities (escape, encode, strip functions)
+- Security modules (auth, security, validation folders)
+
+Example: If PR fixes "path traversal in media parser" but:
+1. Local code has no media parsing at all → SKIP (attack vector absent)
+2. Local code has media parsing AND `isPathSafe()` → SKIP (already protected)
+3. Local code has media parsing but NO protection → IMPLEMENT
 
 Respond ONLY with valid JSON in this exact format:
 {
@@ -229,8 +259,12 @@ def build_analysis_prompt(
     # Add local code context if available
     if local_code_context:
         prompt += "\n## Relevant Local Code (for comparison)\n\n"
+        prompt += "**IMPORTANT: Carefully review this code for existing implementations of the same functionality.**\n\n"
         for ctx in local_code_context[:5]:  # Limit to 5 files
-            prompt += f"### {ctx.get('path', 'unknown')}\n```\n{ctx.get('content', '')[:1500]}\n```\n\n"
+            content = ctx.get('content', '')
+            # Show more content for security-related files
+            max_chars = 3500 if 'security' in ctx.get('path', '').lower() else 2000
+            prompt += f"### {ctx.get('path', 'unknown')}\n```\n{content[:max_chars]}\n```\n\n"
     
     # Add similarity results if available
     if similarity_results:

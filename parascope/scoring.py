@@ -213,11 +213,13 @@ def run_semantic_analysis(
         if feature.name in matched_features:
             feature_paths.extend(feature.paths)
     
-    # Extract matching local files
+    # Extract matching local files (now includes keyword-based search)
     local_chunks = extract_matching_files(
         repo_root=local_repo_path,
         pr_files=[f.path for f in files],
         feature_paths=feature_paths,
+        pr_title=pr.title,
+        pr_body=pr.body,
     )
     
     if not local_chunks:
@@ -298,11 +300,18 @@ def run_llm_analysis(
             repo_root=local_repo_path,
             pr_files=[f.path for f in files],
             feature_paths=feature_paths,
+            pr_title=pr.title,
+            pr_body=pr.body,
         )
         
+        # Include more context for security-related files
+        is_security_pr = any(kw in pr.title.lower() for kw in ['security', 'fix', 'vulnerability', 'lfi', 'xss', 'injection'])
+        max_chars = 4000 if is_security_pr else 2000
+        max_files = 8 if is_security_pr else 5
+        
         local_code_context = [
-            {"path": chunk.path, "content": chunk.content[:2000]}
-            for chunk in local_chunks[:5]
+            {"path": chunk.path, "content": chunk.content[:max_chars]}
+            for chunk in local_chunks[:max_files]
         ]
     except Exception:
         pass
