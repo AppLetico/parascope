@@ -449,6 +449,22 @@ PRs below `min_rule_score` (0.3) are skipped.
 - Flags PRs with >85% similarity as "potentially implemented"
 - Provides local code snippets to LLM for comparison
 
+### Integration Detection
+
+Parascope automatically detects **third-party integrations** mentioned in PRs:
+
+| Category | Detected Integrations |
+|----------|----------------------|
+| Messaging | Telegram, Slack, Discord, WhatsApp, Teams, Signal |
+| Email | Gmail, Outlook, SendGrid, Mailgun |
+| Cloud | AWS, GCP, Azure, S3, Lambda, Cloudflare |
+| Databases | MongoDB, PostgreSQL, MySQL, Redis, Elasticsearch |
+| APIs | Stripe, Twilio, GitHub, GitLab, Jira |
+
+If a PR is about an integration **not found** in your codebase (code, README, or dependencies), Parascope warns the LLM to skip it.
+
+**Example:** A "fix Slack media downloads" PR is auto-skipped if your project doesn't use Slack.
+
 ### Automatic Project Context
 
 Parascope automatically reads your project's **README.md** and includes it in the LLM prompt. This helps the LLM understand:
@@ -472,7 +488,13 @@ project:
 
 ### Stage 3: LLM Decision
 
-The LLM receives full context (including your README) and returns:
+The LLM receives full context including:
+- Your README (auto-extracted)
+- Local code snippets matching PR patterns
+- Integration warnings (if PR mentions missing integrations)
+- Semantic similarity results
+
+It returns:
 
 | Field | Description |
 |-------|-------------|
