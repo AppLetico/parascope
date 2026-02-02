@@ -2,7 +2,38 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-from parascope.config import ParascopeConfig
+from parascope.config import ParascopeConfig, ProjectConfig
+
+
+def test_config_load_project_section(tmp_path):
+    config_path = tmp_path / "parascope.yml"
+    config_path.write_text(
+        """
+local_repo: .
+project:
+  name: My Project
+  description: |
+    This is a test project.
+    RELEVANT: feature A
+    NOT RELEVANT: feature B
+        """.strip()
+    )
+
+    config = ParascopeConfig.load(tmp_path)
+
+    assert config.project.name == "My Project"
+    assert "test project" in config.project.description
+    assert "RELEVANT" in config.project.description
+
+
+def test_config_project_defaults_to_empty(tmp_path):
+    config_path = tmp_path / "parascope.yml"
+    config_path.write_text("local_repo: .")
+
+    config = ParascopeConfig.load(tmp_path)
+
+    assert config.project.name == ""
+    assert config.project.description == ""
 
 
 def test_config_load_local_repo_and_defaults(tmp_path):
