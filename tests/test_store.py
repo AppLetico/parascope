@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from parascope.store import Store
+from prscope.store import Store
 
 
 def test_evaluation_deduplication(tmp_path):
-    db_path = tmp_path / "parascope.db"
+    db_path = tmp_path / "prscope.db"
     store = Store(db_path=db_path)
 
     repo = store.upsert_upstream_repo("owner/repo")

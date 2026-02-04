@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from parascope.config import Feature, ParascopeConfig, ScoringConfig
-from parascope.scoring import score_pr, score_pr_rules, tokenize, match_keyword, match_path_glob
-from parascope.store import PRFile, PullRequest
+from prscope.config import Feature, PrscopeConfig, ScoringConfig
+from prscope.scoring import score_pr, score_pr_rules, tokenize, match_keyword, match_path_glob
+from prscope.store import PRFile, PullRequest
 
 
 def test_tokenize():
@@ -28,7 +28,7 @@ def test_match_path_glob():
 
 
 def test_score_pr_rules():
-    config = ParascopeConfig(
+    config = PrscopeConfig(
         scoring=ScoringConfig(min_rule_score=0.3, min_final_score=0.5),
         features=[
             Feature(name="security", keywords=["security", "auth"], paths=["**/auth/**"]),
@@ -52,7 +52,7 @@ def test_score_pr_rules():
 
 
 def test_score_pr_skip_low_relevance():
-    config = ParascopeConfig(
+    config = PrscopeConfig(
         scoring=ScoringConfig(min_rule_score=0.3, min_final_score=0.5),
         features=[
             Feature(name="security", keywords=["security"], paths=["**/auth/**"]),
@@ -74,7 +74,7 @@ def test_score_pr_skip_low_relevance():
 
 
 def test_score_pr_relevant_decision():
-    config = ParascopeConfig(
+    config = PrscopeConfig(
         scoring=ScoringConfig(min_rule_score=0.3, min_final_score=0.5),
         features=[
             Feature(

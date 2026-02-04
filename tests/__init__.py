@@ -1,1 +1,1 @@
-# Parascope test suite
+# Prscope test suite

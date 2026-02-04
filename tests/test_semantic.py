@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from parascope.semantic import (
+from prscope.semantic import (
     CodeChunk,
     read_local_files,
     extract_matching_files,

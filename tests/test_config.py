@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-from parascope.config import ParascopeConfig, ProjectConfig
+from prscope.config import PrscopeConfig, ProjectConfig
 
 
 def test_config_load_project_section(tmp_path):
-    config_path = tmp_path / "parascope.yml"
+    config_path = tmp_path / "prscope.yml"
     config_path.write_text(
         """
 local_repo: .
@@ -19,7 +19,7 @@ project:
         """.strip()
     )
 
-    config = ParascopeConfig.load(tmp_path)
+    config = PrscopeConfig.load(tmp_path)
 
     assert config.project.name == "My Project"
     assert "test project" in config.project.description
@@ -27,17 +27,17 @@ project:
 
 
 def test_config_project_defaults_to_empty(tmp_path):
-    config_path = tmp_path / "parascope.yml"
+    config_path = tmp_path / "prscope.yml"
     config_path.write_text("local_repo: .")
 
-    config = ParascopeConfig.load(tmp_path)
+    config = PrscopeConfig.load(tmp_path)
 
     assert config.project.name == ""
     assert config.project.description == ""
 
 
 def test_config_load_local_repo_and_defaults(tmp_path):
-    config_path = tmp_path / "parascope.yml"
+    config_path = tmp_path / "prscope.yml"
     config_path.write_text(
         """
 local_repo: ./local
@@ -53,12 +53,12 @@ llm:
         """.strip()
     )
 
-    config = ParascopeConfig.load(tmp_path)
+    config = PrscopeConfig.load(tmp_path)
 
     assert config.local_repo == "./local"
     
     # Mock get_repo_root to return tmp_path for relative path resolution
-    with patch("parascope.config.get_repo_root", return_value=tmp_path):
+    with patch("prscope.config.get_repo_root", return_value=tmp_path):
         assert config.get_local_repo_path() == (tmp_path / "local").resolve()
     
     assert config.sync.state == "open"

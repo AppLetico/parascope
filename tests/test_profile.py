@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from parascope.profile import (
+from prscope.profile import (
     extract_readme,
     build_profile,
     scan_file_tree,
@@ -91,4 +91,4 @@ def test_ignore_dirs_contains_expected():
     assert ".git" in IGNORE_DIRS
     assert "node_modules" in IGNORE_DIRS
     assert "__pycache__" in IGNORE_DIRS
-    assert ".parascope" in IGNORE_DIRS
+    assert ".prscope" in IGNORE_DIRS

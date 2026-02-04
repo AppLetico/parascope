@@ -1,7 +1,7 @@
-# Parascope
+# Prscope
 
 <p align="center">
-  <img src="parascope-banner.png" alt="Parascope" width="100%" />
+  <img src="prscope-banner.png" alt="Prscope" width="100%" />
 </p>
 
 <h2 align="center">PR Intelligence for Codebases</h2>
@@ -21,13 +21,13 @@
 
 ---
 
-**Parascope** is a local-first CLI that monitors upstream GitHub PRs, scores them against your codebase, and generates implementable PRDs. It is built for engineering teams who want to stay aligned with upstream changes without drowning in noise.
+**Prscope** is a local-first CLI that monitors upstream GitHub PRs, scores them against your codebase, and generates implementable PRDs. It is built for engineering teams who want to stay aligned with upstream changes without drowning in noise.
 
 > *"Keep upstream changes visible, relevant, and actionable."*
 
 ---
 
-## What Parascope Is
+## What Prscope Is
 
 - A **multi-stage PR analyzer** with rule-based, semantic, and AI-powered scoring
 - A **local codebase profiler** that understands your project structure
@@ -35,7 +35,7 @@
 - A **semantic duplicate detector** that finds already-implemented patterns
 - A **high-signal PRD generator** that only outputs actionable, non-duplicate recommendations
 
-## What Parascope Is Not
+## What Prscope Is Not
 
 - A GitHub bot (no webhooks or server required)
 - A CI/CD system or alerting pipeline
@@ -58,7 +58,7 @@
 
 ## Evaluation Pipeline
 
-Parascope uses a **3-stage pipeline** to ensure PRDs are 100% relevant:
+Prscope uses a **3-stage pipeline** to ensure PRDs are 100% relevant:
 
 ```
 Stage 1: Rule-Based Filtering
@@ -97,7 +97,7 @@ PRD Generation (only for high-confidence "implement" decisions)
 
 ## Handling Large Repositories
 
-When monitoring repos with 1000s of PRs, Parascope uses **incremental sync** and **batch evaluation**:
+When monitoring repos with 1000s of PRs, Prscope uses **incremental sync** and **batch evaluation**:
 
 ### How It Works
 
@@ -130,26 +130,26 @@ sync:
 
 ```bash
 # First time: fetch last 90 days
-parascope sync
+prscope sync
 
 # Later: only new PRs (incremental)
-parascope sync
+prscope sync
 
 # Override: fetch last 30 days, ignore watermark
-parascope sync --since 30d --full
+prscope sync --since 30d --full
 
 # Evaluate in batches (control LLM costs)
-parascope evaluate --batch 10
+prscope evaluate --batch 10
 
 # Continue evaluating remaining
-parascope evaluate
+prscope evaluate
 ```
 
 ---
 
 ## Language Support
 
-Parascope is **language-agnostic**. It works with any codebase.
+Prscope is **language-agnostic**. It works with any codebase.
 
 ### Supported Languages
 
@@ -172,7 +172,7 @@ Parascope is **language-agnostic**. It works with any codebase.
 ### Example: TypeScript Project
 
 ```yaml
-# parascope.features.yml
+# prscope.features.yml
 features:
   components:
     keywords: [component, react, svelte, vue]
@@ -200,12 +200,12 @@ The profiler automatically detects:
 
 ```bash
 # Clone and install (editable)
-git clone https://github.com/your-org/parascope.git
-cd parascope
+git clone https://github.com/your-org/prscope.git
+cd prscope
 pip install -e .
 
 # Or install directly
-pip install parascope
+pip install prscope
 ```
 
 ---
@@ -214,7 +214,7 @@ pip install parascope
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                   parascope CLI                          │
+│                   prscope CLI                          │
 │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌─────────┐  │
 │  │  init    │  │ profile  │  │   sync   │  │evaluate │  │
 │  └──────────┘  └──────────┘  └──────────┘  └─────────┘  │
@@ -249,40 +249,40 @@ flowchart LR
 ```bash
 # 1) Initialize in your repository
 cd /path/to/your/repo
-parascope init
+prscope init
 
-# 2) Configure upstream repos (edit parascope.yml)
-# 3) Define features to match (edit parascope.features.yml)
+# 2) Configure upstream repos (edit prscope.yml)
+# 3) Define features to match (edit prscope.features.yml)
 
 # 4) Set up environment variables
 cp env.example .env
 # Edit .env with your API keys (at minimum, GITHUB_TOKEN)
 
 # 5) Profile your codebase
-parascope profile
+prscope profile
 
 # 6) Sync PRs from upstream
-parascope sync
+prscope sync
 
 # 7) Evaluate relevance
-parascope evaluate
+prscope evaluate
 
 # 8) Generate PRDs for relevant PRs
-parascope prd
+prscope prd
 
 # 9) View digest of relevant PRs
-parascope digest
+prscope digest
 ```
 
 ---
 
 ## Workflow
 
-1. **Initialize**: `parascope init` creates configs and the local SQLite store
-2. **Profile**: `parascope profile` scans the local repo (`local_repo` in config)
-3. **Sync**: `parascope sync` fetches upstream PRs (merged by default)
-4. **Evaluate**: `parascope evaluate` scores PRs vs features and rules
-5. **Generate**: `parascope prd` produces implementation PRDs
+1. **Initialize**: `prscope init` creates configs and the local SQLite store
+2. **Profile**: `prscope profile` scans the local repo (`local_repo` in config)
+3. **Sync**: `prscope sync` fetches upstream PRs (merged by default)
+4. **Evaluate**: `prscope evaluate` scores PRs vs features and rules
+5. **Generate**: `prscope prd` produces implementation PRDs
 
 ---
 
@@ -290,39 +290,39 @@ parascope digest
 
 | Command | Purpose | Example |
 |---------|---------|---------|
-| `init` | Create config, db, and templates | `parascope init --force` |
-| `profile` | Scan local codebase | `parascope profile --json` |
-| `sync` | Fetch upstream PRs | `parascope sync --since 30d` |
-| `evaluate` | Score PR relevance | `parascope evaluate --batch 10` |
-| `prd` | Generate PRD documents | `parascope prd --pr 123` |
-| `digest` | Summarize relevant PRs | `parascope digest --limit 20` |
-| `history` | View evaluation history | `parascope history --decision relevant` |
+| `init` | Create config, db, and templates | `prscope init --force` |
+| `profile` | Scan local codebase | `prscope profile --json` |
+| `sync` | Fetch upstream PRs | `prscope sync --since 30d` |
+| `evaluate` | Score PR relevance | `prscope evaluate --batch 10` |
+| `prd` | Generate PRD documents | `prscope prd --pr 123` |
+| `digest` | Summarize relevant PRs | `prscope digest --limit 20` |
+| `history` | View evaluation history | `prscope history --decision relevant` |
 
 ### Sync Options
 
 ```bash
-parascope sync                     # Incremental (new PRs since last sync)
-parascope sync --since 30d         # Last 30 days
-parascope sync --since 2024-01-01  # Since specific date  
-parascope sync --since 6m          # Last 6 months
-parascope sync --full              # Ignore watermark, use --since window
-parascope sync --max-prs 50        # Limit PRs per repo
+prscope sync                     # Incremental (new PRs since last sync)
+prscope sync --since 30d         # Last 30 days
+prscope sync --since 2024-01-01  # Since specific date  
+prscope sync --since 6m          # Last 6 months
+prscope sync --full              # Ignore watermark, use --since window
+prscope sync --max-prs 50        # Limit PRs per repo
 ```
 
 ### Evaluate Options
 
 ```bash
-parascope evaluate                 # Evaluate unevaluated PRs
-parascope evaluate --batch 10      # Limit to 10 PRs (control LLM costs)
-parascope evaluate --pr 123        # Evaluate specific PR
-parascope evaluate --force         # Re-evaluate all
+prscope evaluate                 # Evaluate unevaluated PRs
+prscope evaluate --batch 10      # Limit to 10 PRs (control LLM costs)
+prscope evaluate --pr 123        # Evaluate specific PR
+prscope evaluate --force         # Re-evaluate all
 ```
 
 ---
 
 ## Configuration
 
-### `parascope.yml`
+### `prscope.yml`
 
 ```yaml
 # Local repository to profile and compare against upstream PRs
@@ -374,7 +374,7 @@ llm:
   max_tokens: 3000
 ```
 
-### `parascope.features.yml`
+### `prscope.features.yml`
 
 ```yaml
 features:
@@ -412,7 +412,7 @@ features:
 
 ### Environment Variables
 
-Parascope loads environment variables from a `.env` file in your repo root.
+Prscope loads environment variables from a `.env` file in your repo root.
 
 ```bash
 cp env.example .env
@@ -451,7 +451,7 @@ PRs below `min_rule_score` (0.3) are skipped.
 
 ### Integration Detection
 
-Parascope automatically detects **third-party integrations** mentioned in PRs:
+Prscope automatically detects **third-party integrations** mentioned in PRs:
 
 | Category | Detected Integrations |
 |----------|----------------------|
@@ -461,13 +461,13 @@ Parascope automatically detects **third-party integrations** mentioned in PRs:
 | Databases | MongoDB, PostgreSQL, MySQL, Redis, Elasticsearch |
 | APIs | Stripe, Twilio, GitHub, GitLab, Jira |
 
-If a PR is about an integration **not found** in your codebase (code, README, or dependencies), Parascope warns the LLM to skip it.
+If a PR is about an integration **not found** in your codebase (code, README, or dependencies), Prscope warns the LLM to skip it.
 
 **Example:** A "fix Slack media downloads" PR is auto-skipped if your project doesn't use Slack.
 
 ### Automatic Project Context
 
-Parascope automatically reads your project's **README.md** and includes it in the LLM prompt. This helps the LLM understand:
+Prscope automatically reads your project's **README.md** and includes it in the LLM prompt. This helps the LLM understand:
 - What your project does
 - What technologies it uses
 - What's relevant vs. irrelevant
@@ -477,7 +477,7 @@ No manual configuration needed - just have a README in your repo.
 **Optional override:** If your README isn't descriptive enough, add a custom description:
 
 ```yaml
-# parascope.yml
+# prscope.yml
 project:
   name: My Project
   description: |
@@ -524,7 +524,7 @@ If both your codebase and the PR have not changed, evaluation is skipped.
 
 ## Database Schema
 
-SQLite database stored in `.parascope/parascope.db`:
+SQLite database stored in `.prscope/prscope.db`:
 
 ```sql
 -- Local codebase profiles
@@ -550,7 +550,7 @@ artifacts(evaluation_id, type, path, created_at)
 
 ## Supported LLM Providers
 
-Parascope uses [LiteLLM](https://docs.litellm.ai/) for unified LLM access.
+Prscope uses [LiteLLM](https://docs.litellm.ai/) for unified LLM access.
 
 | Provider | Model Examples | API Key Env Var |
 |----------|---------------|-----------------|
@@ -566,7 +566,7 @@ Parascope uses [LiteLLM](https://docs.litellm.ai/) for unified LLM access.
 ## Project Structure
 
 ```
-parascope/
+prscope/
 ├── cli.py          # Click CLI with 7 commands
 ├── config.py       # YAML config loader
 ├── store.py        # SQLite storage layer

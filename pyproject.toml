@@ -3,14 +3,14 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "parascope"
+name = "prscope"
 version = "0.1.0"
 description = "Monitor upstream GitHub PRs, evaluate relevance, and generate implementation PRDs"
 readme = "README.md"
 requires-python = ">=3.9"
 license = "MIT"
 authors = [
-    { name = "Parascope" }
+    { name = "Prscope" }
 ]
 keywords = ["github", "pr", "prd", "monitoring", "cli"]
 classifiers = [
@@ -41,10 +41,10 @@ dev = [
 ]
 
 [project.scripts]
-parascope = "parascope.cli:main"
+prscope = "prscope.cli:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["parascope"]
+packages = ["prscope"]
 
 [tool.ruff]
 target-version = "py39"

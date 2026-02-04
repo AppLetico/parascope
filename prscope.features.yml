@@ -1,0 +1,140 @@
+# Prscope Feature Definitions
+# Tailored for Clasper - Agent Execution Platform
+#
+# Clasper focuses on:
+# - Agent orchestration & execution
+# - LLM provider abstraction
+# - Governance (RBAC, budgets, risk)
+# - Observability & tracing
+# - Skill runtime
+#
+# Clasper does NOT care about:
+# - Messaging channels (Telegram, WhatsApp, Discord, etc.)
+# - Browser automation
+# - Personal assistant features
+# - OS-level integrations
+
+features:
+  # Agent execution and orchestration
+  agent_execution:
+    description: Agent lifecycle, execution, and orchestration patterns
+    keywords:
+      - agent
+      - execution
+      - orchestration
+      - runtime
+      - workspace
+      - session
+      - context
+      - stateless
+    paths:
+      - "**/agent/**"
+      - "**/agents/**"
+      - "**/execution/**"
+      - "**/runtime/**"
+      - "**/workspace/**"
+
+  # LLM provider abstraction
+  llm_providers:
+    description: LLM provider integration, abstraction, and switching
+    keywords:
+      - provider
+      - llm
+      - model
+      - anthropic
+      - openai
+      - streaming
+      - completion
+      - tokens
+      - context window
+    paths:
+      - "**/providers/**"
+      - "**/llm/**"
+      - "**/models/**"
+      - "**/*provider*"
+
+  # Governance, safety, and access control
+  governance:
+    description: RBAC, permissions, budgets, risk scoring, audit
+    keywords:
+      - governance
+      - rbac
+      - permission
+      - budget
+      - cost
+      - risk
+      - audit
+      - tenant
+      - isolation
+      - redaction
+    paths:
+      - "**/governance/**"
+      - "**/security/**"
+      - "**/auth/**"
+      - "**/rbac/**"
+      - "**/budget/**"
+
+  # Observability and tracing
+  observability:
+    description: Execution traces, logging, replay, debugging
+    keywords:
+      - trace
+      - tracing
+      - observability
+      - logging
+      - replay
+      - debug
+      - annotation
+      - retention
+    paths:
+      - "**/tracing/**"
+      - "**/traces/**"
+      - "**/observability/**"
+      - "**/logging/**"
+
+  # Skill system
+  skills:
+    description: Skill registry, versioning, lifecycle, testing
+    keywords:
+      - skill
+      - skills
+      - registry
+      - manifest
+      - lifecycle
+      - version
+      - yaml
+    paths:
+      - "**/skills/**"
+      - "**/skill/**"
+      - "**/*skill*"
+
+  # Tool/function calling
+  tools:
+    description: Tool definitions, function calling, tool proxy
+    keywords:
+      - tool
+      - tools
+      - function_call
+      - tool_call
+      - function calling
+    paths:
+      - "**/tools/**"
+      - "**/tool/**"
+      - "**/*tool*"
+
+  # API and HTTP layer
+  api:
+    description: HTTP endpoints, request handling, middleware
+    keywords:
+      - api
+      - endpoint
+      - route
+      - handler
+      - middleware
+      - fastify
+      - http
+    paths:
+      - "**/api/**"
+      - "**/routes/**"
+      - "**/handlers/**"
+      - "**/server/**"

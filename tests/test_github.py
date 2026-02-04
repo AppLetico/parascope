@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from unittest.mock import Mock, patch
 
-from parascope.github import GitHubClient, parse_since
+from prscope.github import GitHubClient, parse_since
 
 
 def test_parse_since_relative_days():
