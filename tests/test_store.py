@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+
 from prscope.store import Store
 
 
@@ -40,3 +42,44 @@ def test_evaluation_deduplication(tmp_path):
     )
 
     assert store.evaluation_exists(pr.id, local_profile_sha, pr_head_sha) is True
+
+
+def test_planning_session_turn_and_version_persistence(tmp_path):
+    db_path = tmp_path / "prscope.db"
+    store = Store(db_path=db_path)
+
+    session = store.create_planning_session(
+        repo_name="alpha",
+        title="Test Plan",
+        requirements="Build planning mode",
+        seed_type="requirements",
+    )
+    assert session.repo_name == "alpha"
+    assert session.current_round == 0
+
+    turn = store.add_planning_turn(
+        session_id=session.id,
+        role="critic",
+        content="Critique content",
+        round_number=1,
+        major_issues_remaining=2,
+        minor_issues_remaining=1,
+        hard_constraint_violations=["C-001"],
+    )
+    assert turn.major_issues_remaining == 2
+    assert turn.hard_constraint_violations == ["C-001"]
+
+    content = "# Plan\n\n- [ ] Item"
+    plan_sha = hashlib.sha256(content.encode("utf-8")).hexdigest()
+    version = store.save_plan_version(
+        session_id=session.id,
+        round_number=1,
+        plan_content=content,
+        plan_sha=plan_sha,
+    )
+    assert version.plan_sha == plan_sha
+
+    versions = store.get_plan_versions(session.id, limit=5)
+    assert len(versions) == 1
+    assert versions[0].round == 1
+    assert store.get_latest_critic_turn(session.id) is not None

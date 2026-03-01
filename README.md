@@ -1,636 +1,154 @@
 # Prscope
 
-<p align="center">
-  <img src="prscope-banner.png" alt="Prscope" width="100%" />
-</p>
+Planning-first PR intelligence for local repositories.
 
-<h2 align="center">PR Intelligence for Codebases</h2>
+Prscope now treats upstream PR analysis as **input** to an interactive planning system that produces high-quality `PRD.md` and `RFC.md` outputs.
 
-<p align="center">
-  <b>STAY ALIGNED. SHIP FASTER.</b>
-  <br />
-  <i>Track upstream PRs, evaluate relevance, and generate implementation PRDs.</i>
-</p>
+## What Changed
 
-<p align="center">
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License"></a>
-  <img src="https://img.shields.io/badge/version-0.1.0-blue.svg" alt="Version">
-  <img src="https://img.shields.io/badge/built_with-Python-blue.svg" alt="Python">
-  <img src="https://img.shields.io/badge/status-Alpha-yellow.svg" alt="Status">
-</p>
+- Planning is now the primary workflow (`prscope plan ...`)
+- Upstream sync/evaluate remain, but mainly to seed planning sessions
+- Standalone legacy PRD generation command was removed (`prscope prd`)
+- Multi-repo profiles, manifesto constraints, adversarial Author/Critic rounds, and headless validation are built in
 
----
+## Core Workflow
 
-**Prscope** is a local-first CLI that monitors upstream GitHub PRs, scores them against your codebase, and generates implementable PRDs. It is built for engineering teams who want to stay aligned with upstream changes without drowning in noise.
+1. `prscope profile` – profile local repo structure
+2. `prscope upstream sync` – pull upstream PR metadata/files
+3. `prscope upstream evaluate` – score upstream PRs for planning relevance
+4. `prscope plan start --from-pr <owner/repo> <pr-number>` or `prscope plan chat`
+5. Refine interactively in TUI, then `Ctrl+A` approve, `Ctrl+E` export
+6. Optional CI checks: `prscope plan validate <session-id>`
 
-> *"Keep upstream changes visible, relevant, and actionable."*
+## Planning Features
 
----
+- Interactive Textual UI for Q&A and iterative refinement
+- Adversarial planning loop (Author LLM ↔ Critic LLM)
+- Structured memory blocks per repo:
+  - `architecture.md`
+  - `modules.md`
+  - `patterns.md`
+  - `entrypoints.md`
+- Manifesto-driven constraints (`<repo>/.prscope/manifesto.md`)
+- Convergence based on:
+  - plan hash / diff
+  - structural regression checks
+  - critic `major_issues_remaining`
+- Strict verified-reference mode:
+  - `planning.require_verified_file_references: true`
+- Drift detection:
+  - `prscope plan status <session-id> --pr-number <N>`
 
-## What Prscope Is
+## CLI Reference
 
-- A **multi-stage PR analyzer** with rule-based, semantic, and AI-powered scoring
-- A **local codebase profiler** that understands your project structure
-- A **merged-PR tracker** with deduplication by repo and codebase state
-- A **semantic duplicate detector** that finds already-implemented patterns
-- A **high-signal PRD generator** that only outputs actionable, non-duplicate recommendations
+### Upstream Input Commands
 
-## What Prscope Is Not
+- `prscope init`
+- `prscope profile`
+- `prscope upstream sync`
+- `prscope upstream evaluate`
+- `prscope upstream digest`
+- `prscope upstream history`
 
-- A GitHub bot (no webhooks or server required)
-- A CI/CD system or alerting pipeline
-- A source of noise (LLM mode filters aggressively for genuine relevance)
-- A replacement for reviewing upstream code changes yourself
+### Planning Commands
 
----
+- `prscope repos list`
+- `prscope plan start "requirements text" [--repo <name>]`
+- `prscope plan start --from-pr <owner/repo> <number> [--repo <name>]`
+- `prscope plan chat [--repo <name>]`
+- `prscope plan resume <session-id>`
+- `prscope plan list [--repo <name>]`
+- `prscope plan memory [--repo <name>] [--rebuild]`
+- `prscope plan manifesto [--repo <name>] [--edit]`
+- `prscope plan diff <session-id> [--round N]`
+- `prscope plan export <session-id>`
+- `prscope plan validate <session-id>`
+- `prscope plan status <session-id> --pr-number <N>`
 
-## Core Pillars
-
-| Pillar | Description |
-|--------|-------------|
-| **PR Discovery** | Monitor merged PRs from upstream repos by default |
-| **Codebase Profiling** | Scan local repo structure and dependencies |
-| **Multi-Stage Scoring** | Rule-based + semantic + LLM analysis |
-| **Duplicate Detection** | Semantic search to find already-implemented patterns |
-| **High-Signal PRDs** | Only generate for high-confidence, non-duplicate recommendations |
-
----
-
-## Evaluation Pipeline
-
-Prscope uses a **3-stage pipeline** to ensure PRDs are 100% relevant:
-
-```
-Stage 1: Rule-Based Filtering
-├── Keyword matching (PR title/body vs feature keywords)
-├── Path matching (PR files vs feature globs)
-└── Score threshold filter (skip low-relevance PRs)
-        │
-        ▼
-Stage 2: Semantic Similarity
-├── Embed PR description + local code
-├── Find similar implementations in your codebase
-└── Flag potential duplicates (similarity > 85%)
-        │
-        ▼
-Stage 3: LLM Analysis
-├── Full context: PR + local code snippets + similarity results
-├── Decision: implement / partial / skip
-├── Confidence score (0-100%)
-└── Reasoning: why this matters (or doesn't)
-        │
-        ▼
-PRD Generation (only for high-confidence "implement" decisions)
-```
-
-### Why 3 Stages?
-
-| Stage | Purpose | Without It |
-|-------|---------|------------|
-| Rule-based | Fast filtering, reduce API calls | Too many LLM requests |
-| Semantic | Detect duplicates, find local context | PRDs for already-implemented features |
-| LLM | Final judgment with reasoning | No understanding of "should we do this?" |
-
-**Recommendation:** Enable LLM (`llm.enabled: true`) for production use. Rule-based mode produces noise.
-
----
-
-## Handling Large Repositories
-
-When monitoring repos with 1000s of PRs, Prscope uses **incremental sync** and **batch evaluation**:
-
-### How It Works
-
-```
-First sync:
-  └── Fetches PRs from last 90 days (configurable via `since`)
-  └── Stores watermark timestamp
-
-Subsequent syncs:
-  └── Only fetches PRs newer than watermark
-  └── Skips unchanged PRs (same head_sha)
-
-Evaluation:
-  └── Batch limit (default: 25 PRs)
-  └── Run multiple times to process more
-  └── Already-evaluated PRs are skipped
-```
-
-### Configuration
+## Configuration (`prscope.yml`)
 
 ```yaml
+# Backward-compatible single repo
+local_repo: ~/workspace/my-repo
+upstream:
+  - repo: openclaw/openclaw
+
 sync:
-  since: 90d          # Initial window: 90d, 6m, 1y, or "2024-01-01"
-  incremental: true   # Use watermark for subsequent syncs
-  max_prs: 100        # Per-repo limit
-  eval_batch_size: 25 # LLM calls per evaluate run
+  state: merged
+  max_prs: 100
+  fetch_files: true
+  since: 90d
+  incremental: true
+  eval_batch_size: 25
+
+llm:
+  enabled: true
+  model: gpt-4o
+  temperature: 0.2
+  max_tokens: 3000
+
+planning:
+  author_model: gpt-4o
+  critic_model: claude-3-5-sonnet-20241022
+  max_adversarial_rounds: 10
+  convergence_threshold: 0.05
+  output_dir: ./plans
+  memory_concurrency: 2
+  discovery_max_turns: 5
+  seed_token_budget: 4000
+  require_verified_file_references: false
+  validate_temperature: 0.0
+  validate_audit_log: true
+
+# Optional multi-repo profiles
+repos:
+  my-repo:
+    path: ~/workspace/my-repo
+    upstream:
+      - repo: openclaw/openclaw
 ```
 
-### CLI Examples
+## Manifesto Constraints
+
+Create/edit with:
 
 ```bash
-# First time: fetch last 90 days
-prscope sync
-
-# Later: only new PRs (incremental)
-prscope sync
-
-# Override: fetch last 30 days, ignore watermark
-prscope sync --since 30d --full
-
-# Evaluate in batches (control LLM costs)
-prscope evaluate --batch 10
-
-# Continue evaluating remaining
-prscope evaluate
+prscope plan manifesto --repo my-repo --edit
 ```
 
----
-
-## Language Support
-
-Prscope is **language-agnostic**. It works with any codebase.
-
-### Supported Languages
-
-| Language | Dependency Parsing | File Detection |
-|----------|-------------------|----------------|
-| TypeScript/JavaScript | `package.json` | `.ts`, `.tsx`, `.js`, `.jsx` |
-| Python | `pyproject.toml`, `requirements.txt` | `.py` |
-| Go | (planned: `go.mod`) | `.go` |
-| Rust | (planned: `Cargo.toml`) | `.rs` |
-| Java/Kotlin | (planned: `pom.xml`, `build.gradle`) | `.java`, `.kt` |
-| Any other | File tree only | By extension |
-
-### How It Works
-
-1. **File Tree Scanning** - Works for all languages
-2. **Dependency Parsing** - Extracts from package managers
-3. **Path Matching** - Glob patterns work universally
-4. **LLM Analysis** - Understands any programming language
-
-### Example: TypeScript Project
+Machine-readable block example:
 
 ```yaml
-# prscope.features.yml
-features:
-  components:
-    keywords: [component, react, svelte, vue]
-    paths:
-      - "**/components/**"
-      - "**/*.tsx"
-      - "**/*.svelte"
-  
-  api:
-    keywords: [api, endpoint, route, handler]
-    paths:
-      - "**/routes/**"
-      - "**/api/**"
-      - "**/*.controller.ts"
+extends: org-default # V1 stub, parsed but not resolved
+constraints:
+  - id: C-001
+    text: "No synchronous I/O on the main thread"
+    severity: hard
+  - id: C-002
+    text: "Prefer stdlib over new dependencies"
+    severity: soft
+    optional: true
 ```
-
-The profiler automatically detects:
-- `package.json` dependencies
-- File extensions (`.ts`, `.tsx`, `.js`, `.jsx`, `.svelte`, etc.)
-- Project structure
-
----
 
 ## Installation
 
 ```bash
-# Clone and install (editable)
-git clone https://github.com/your-org/prscope.git
-cd prscope
-pip install -e .
-
-# Or install directly
-pip install prscope
+pip install -e ".[dev]"
 ```
 
----
-
-## Architecture
-
-```
-┌─────────────────────────────────────────────────────────┐
-│                   prscope CLI                          │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌─────────┐  │
-│  │  init    │  │ profile  │  │   sync   │  │evaluate │  │
-│  └──────────┘  └──────────┘  └──────────┘  └─────────┘  │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐               │
-│  │   prd    │  │  digest  │  │ history  │               │
-│  └──────────┘  └──────────┘  └──────────┘               │
-└───────────────────────┬─────────────────────────────────┘
-                        │
-    ┌───────────────────┼───────────────────┐
-    ▼                   ▼                   ▼
-┌────────┐      ┌─────────────┐      ┌───────────┐
-│ GitHub │      │   SQLite    │      │  LiteLLM  │
-│  REST  │      │   Store     │      │ (Optional)│
-└────────┘      └─────────────┘      └───────────┘
-```
-
-### Data Flow
-
-```mermaid
-flowchart LR
-    A[UpstreamRepos] -->|sync| B[SQLiteStore]
-    C[LocalRepo] -->|profile| B
-    B -->|evaluate| D[ScoringEngine]
-    D -->|LLMoptional| E[LiteLLM]
-    D -->|prd| F[MarkdownPRDs]
-```
-
----
-
-## Quickstart
+## Environment Setup
 
 ```bash
-# 1) Initialize in your repository
-cd /path/to/your/repo
-prscope init
-
-# 2) Configure upstream repos (edit prscope.yml)
-# 3) Define features to match (edit prscope.features.yml)
-
-# 4) Set up environment variables
-cp env.example .env
-# Edit .env with your API keys (at minimum, GITHUB_TOKEN)
-
-# 5) Profile your codebase
-prscope profile
-
-# 6) Sync PRs from upstream
-prscope sync
-
-# 7) Evaluate relevance
-prscope evaluate
-
-# 8) Generate PRDs for relevant PRs
-prscope prd
-
-# 9) View digest of relevant PRs
-prscope digest
+cp env.sample .env
+# or: cp env.example .env
 ```
 
----
-
-## Workflow
-
-1. **Initialize**: `prscope init` creates configs and the local SQLite store
-2. **Profile**: `prscope profile` scans the local repo (`local_repo` in config)
-3. **Sync**: `prscope sync` fetches upstream PRs (merged by default)
-4. **Evaluate**: `prscope evaluate` scores PRs vs features and rules
-5. **Generate**: `prscope prd` produces implementation PRDs
-
----
-
-## CLI Reference
-
-| Command | Purpose | Example |
-|---------|---------|---------|
-| `init` | Create config, db, and templates | `prscope init --force` |
-| `profile` | Scan local codebase | `prscope profile --json` |
-| `sync` | Fetch upstream PRs | `prscope sync --since 30d` |
-| `evaluate` | Score PR relevance | `prscope evaluate --batch 10` |
-| `prd` | Generate PRD documents | `prscope prd --pr 123` |
-| `digest` | Summarize relevant PRs | `prscope digest --limit 20` |
-| `history` | View evaluation history | `prscope history --decision relevant` |
-
-### Sync Options
-
-```bash
-prscope sync                     # Incremental (new PRs since last sync)
-prscope sync --since 30d         # Last 30 days
-prscope sync --since 2024-01-01  # Since specific date  
-prscope sync --since 6m          # Last 6 months
-prscope sync --full              # Ignore watermark, use --since window
-prscope sync --max-prs 50        # Limit PRs per repo
-```
-
-### Evaluate Options
-
-```bash
-prscope evaluate                 # Evaluate unevaluated PRs
-prscope evaluate --batch 10      # Limit to 10 PRs (control LLM costs)
-prscope evaluate --pr 123        # Evaluate specific PR
-prscope evaluate --force         # Re-evaluate all
-```
-
----
-
-## Configuration
-
-### `prscope.yml`
-
-```yaml
-# Local repository to profile and compare against upstream PRs
-local_repo: .  # Current directory (default)
-# local_repo: ~/workspace/my-project
-# local_repo: /absolute/path/to/repo
-
-# Project context (optional - README is used automatically)
-# Only needed if your README doesn't describe your project well
-# project:
-#   name: My Project
-#   description: |
-#     Override description for LLM context.
-
-# Upstream repositories to monitor
-upstream:
-  - repo: openclaw/openclaw
-    filters:
-      # Per-repo overrides (optional)
-      # state: merged
-      # labels: [security, agents]
-
-# Sync settings (handles repos with 1000s of PRs)
-sync:
-  state: merged       # merged (default), open, closed, all
-  max_prs: 100        # Maximum PRs to fetch per repo
-  fetch_files: true   # Fetch file changes (needed for path matching)
-  since: 90d          # Date window: 90d, 6m, 1y, or ISO date
-  incremental: true   # Only fetch new PRs after initial sync
-  eval_batch_size: 25 # Max PRs to evaluate per run (controls LLM costs)
-
-# Scoring thresholds
-scoring:
-  min_rule_score: 0.3    # Minimum score to consider
-  min_final_score: 0.5   # Threshold for "relevant"
-  keyword_weight: 0.4    # Weight for keyword matching
-  path_weight: 0.6       # Weight for path matching
-
-# LLM configuration (RECOMMENDED for high-quality, noise-free results)
-# Without LLM, you get rule-based matching only (more noise)
-# API keys are read from environment variables
-llm:
-  enabled: true          # Enable for production use
-  model: gpt-4o          # LiteLLM model string
-  # model: claude-3-opus # Anthropic
-  # model: gemini-pro    # Google
-  # model: ollama/llama2 # Local Ollama
-  temperature: 0.2       # Lower = more consistent decisions
-  max_tokens: 3000
-```
-
-### `prscope.features.yml`
-
-```yaml
-features:
-  security:
-    keywords:
-      - security
-      - auth
-      - jwt
-      - tls
-      - injection
-    paths:
-      - "**/security/**"
-      - "**/auth/**"
-      - "**/*auth*.py"
-
-  streaming:
-    keywords:
-      - stream
-      - sse
-      - websocket
-      - chunk
-    paths:
-      - "**/streaming*"
-      - "**/stream*"
-
-  api:
-    keywords:
-      - api
-      - endpoint
-      - route
-    paths:
-      - "**/api/**"
-      - "**/routes/**"
-```
-
-### Environment Variables
-
-Prscope loads environment variables from a `.env` file in your repo root.
-
-```bash
-cp env.example .env
-```
-
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `GITHUB_TOKEN` | Yes | GitHub personal access token for syncing PRs |
-| `OPENAI_API_KEY` | If using OpenAI | For gpt-4o, gpt-4-turbo, o1, etc. |
-| `ANTHROPIC_API_KEY` | If using Anthropic | For claude-3-opus, claude-3-sonnet, etc. |
-| `GOOGLE_API_KEY` | If using Google | For gemini-pro, gemini-1.5-pro, etc. |
-
-See `env.example` or [LiteLLM docs](https://docs.litellm.ai/docs/providers) for all supported providers.
-
----
-
-## Scoring Algorithm
-
-### Stage 1: Rule-Based Score
-
-1. **Keyword Matching** (40% weight)
-   - Checks PR title and body against feature keywords
-   - Score = matched keywords / total keywords
-
-2. **Path Matching** (60% weight)
-   - Matches PR file paths against feature glob patterns
-   - Score = matched files / total files
-
-PRs below `min_rule_score` (0.3) are skipped.
-
-### Stage 2: Semantic Similarity
-
-- Uses embeddings to compare PR description vs local code
-- Flags PRs with >85% similarity as "potentially implemented"
-- Provides local code snippets to LLM for comparison
-
-### Integration Detection
-
-Prscope automatically detects **third-party integrations** mentioned in PRs:
-
-| Category | Detected Integrations |
-|----------|----------------------|
-| Messaging | Telegram, Slack, Discord, WhatsApp, Teams, Signal |
-| Email | Gmail, Outlook, SendGrid, Mailgun |
-| Cloud | AWS, GCP, Azure, S3, Lambda, Cloudflare |
-| Databases | MongoDB, PostgreSQL, MySQL, Redis, Elasticsearch |
-| APIs | Stripe, Twilio, GitHub, GitLab, Jira |
-
-If a PR is about an integration **not found** in your codebase (code, README, or dependencies), Prscope warns the LLM to skip it.
-
-**Example:** A "fix Slack media downloads" PR is auto-skipped if your project doesn't use Slack.
-
-### Automatic Project Context
-
-Prscope automatically reads your project's **README.md** and includes it in the LLM prompt. This helps the LLM understand:
-- What your project does
-- What technologies it uses
-- What's relevant vs. irrelevant
-
-No manual configuration needed - just have a README in your repo.
-
-**Optional override:** If your README isn't descriptive enough, add a custom description:
-
-```yaml
-# prscope.yml
-project:
-  name: My Project
-  description: |
-    Custom description for LLM context.
-    RELEVANT: feature X, technology Y
-    NOT RELEVANT: unrelated topics
-```
-
-### Stage 3: LLM Decision
-
-The LLM receives full context including:
-- Your README (auto-extracted)
-- Local code snippets matching PR patterns
-- Integration warnings (if PR mentions missing integrations)
-- Semantic similarity results
-
-It returns:
-
-| Field | Description |
-|-------|-------------|
-| `decision` | `implement`, `partial`, or `skip` |
-| `confidence` | 0.0 - 1.0 (70%+ required for PRD) |
-| `already_implemented` | true/false |
-| `reasoning` | Why this decision was made |
-
-**Final Decision:**
-- `relevant`: LLM says "implement" with >= 70% confidence
-- `maybe`: LLM says "partial" with >= 60% confidence
-- `skip`: Everything else
-
----
-
-## Deduplication
-
-Evaluations are keyed by:
-
-- PR ID
-- Local profile SHA (your codebase state)
-- PR head SHA (PR state)
-
-If both your codebase and the PR have not changed, evaluation is skipped.
-
----
-
-## Database Schema
-
-SQLite database stored in `.prscope/prscope.db`:
-
-```sql
--- Local codebase profiles
-repo_profiles(repo_root, profile_sha, profile_json, created_at)
-
--- Tracked upstream repos
-upstream_repos(full_name, last_synced_at, last_seen_updated_at)
-
--- PR metadata
-pull_requests(repo_id, number, state, title, body, author, ...)
-
--- Files changed per PR
-pr_files(pr_id, path, additions, deletions)
-
--- Evaluation results (deduped)
-evaluations(pr_id, local_profile_sha, pr_head_sha, rule_score, ...)
-
--- Generated artifacts
-artifacts(evaluation_id, type, path, created_at)
-```
-
----
-
-## Supported LLM Providers
-
-Prscope uses [LiteLLM](https://docs.litellm.ai/) for unified LLM access.
-
-| Provider | Model Examples | API Key Env Var |
-|----------|---------------|-----------------|
-| OpenAI | `gpt-4o`, `gpt-4-turbo`, `o1` | `OPENAI_API_KEY` |
-| Anthropic | `claude-3-opus`, `claude-3-sonnet` | `ANTHROPIC_API_KEY` |
-| Google | `gemini-pro`, `gemini-1.5-pro` | `GOOGLE_API_KEY` |
-| Azure | `azure/gpt-4` | `AZURE_API_KEY` |
-| Ollama | `ollama/llama2`, `ollama/mistral` | (none - local) |
-| AWS Bedrock | `bedrock/claude-v2` | AWS credentials |
-
----
-
-## Project Structure
-
-```
-prscope/
-├── cli.py          # Click CLI with 7 commands
-├── config.py       # YAML config loader
-├── store.py        # SQLite storage layer
-├── profile.py      # Codebase profiler
-├── github.py       # GitHub REST API client
-├── scoring.py      # Multi-stage scoring engine
-├── semantic.py     # Embedding-based similarity search
-├── llm.py          # LiteLLM integration for AI analysis
-├── prd.py          # PRD generator
-└── templates/      # Jinja2 templates
-
-tests/
-├── test_config.py  # Config parsing tests
-├── test_github.py  # Merged PR filter tests
-├── test_scoring.py # Scoring algorithm tests
-├── test_store.py   # Deduplication tests
-└── test_semantic.py # Semantic search tests
-```
-
----
+Set `GITHUB_TOKEN` and any LLM provider keys needed by your configured planning models.
 
 ## Development
 
 ```bash
-# Install with dev dependencies
-make dev
-
-# Run tests
 make test
-
-# Lint + format check + tests
+make lint
 make check
-
-# Format code
-make format
-
-# Clean build artifacts
-make clean
 ```
-
-Or manually:
-
-```bash
-pip install -e ".[dev]"
-pytest -v
-ruff check .
-ruff format .
-```
-
-### Makefile Targets
-
-| Target | Description |
-|--------|-------------|
-| `make install` | Install package (editable) |
-| `make dev` | Install with dev dependencies |
-| `make test` | Run unit tests |
-| `make lint` | Run linter (ruff) |
-| `make format` | Format code |
-| `make check` | Lint + format check + tests |
-| `make clean` | Remove build artifacts |
-| `make run` | Full workflow: profile -> sync -> evaluate -> prd |
-
----
-
-## License
-
-MIT

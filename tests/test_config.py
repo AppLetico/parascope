@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-from prscope.config import PrscopeConfig, ProjectConfig
+from prscope.config import PrscopeConfig
 
 
 def test_config_load_project_section(tmp_path):
@@ -68,3 +68,51 @@ llm:
     assert config.llm.model == "claude-3-opus"
     assert config.llm.temperature == 0.2
     assert config.llm.max_tokens == 1500
+
+
+def test_config_loads_repos_and_planning_settings(tmp_path):
+    (tmp_path / "repo-a").mkdir()
+    (tmp_path / "repo-b").mkdir()
+    config_path = tmp_path / "prscope.yml"
+    config_path.write_text(
+        """
+repos:
+  alpha:
+    path: ./repo-a
+    upstream:
+      - repo: owner/repo-a
+  beta:
+    path: ./repo-b
+planning:
+  author_model: gpt-4o
+  critic_model: claude-3-5-sonnet-20241022
+  max_adversarial_rounds: 7
+  require_verified_file_references: true
+        """.strip()
+    )
+
+    config = PrscopeConfig.load(tmp_path)
+
+    assert set(config.repos.keys()) == {"alpha", "beta"}
+    assert config.get_repo("alpha").resolved_path == (tmp_path / "repo-a").resolve()
+    assert config.get_repo("alpha").upstream[0].repo == "owner/repo-a"
+    assert config.planning.max_adversarial_rounds == 7
+    assert config.planning.require_verified_file_references is True
+
+
+def test_config_resolve_repo_from_cwd(tmp_path):
+    (tmp_path / "repo-c").mkdir()
+    (tmp_path / "repo-c" / "nested").mkdir()
+    config_path = tmp_path / "prscope.yml"
+    config_path.write_text(
+        """
+repos:
+  gamma:
+    path: ./repo-c
+        """.strip()
+    )
+    config = PrscopeConfig.load(tmp_path)
+
+    resolved = config.resolve_repo(None, cwd=(tmp_path / "repo-c" / "nested"))
+    assert resolved.name == "gamma"
+    assert resolved.resolved_path == (tmp_path / "repo-c").resolve()

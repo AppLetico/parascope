@@ -6,7 +6,7 @@ Multi-stage evaluation:
 2. Semantic similarity search (detect already-implemented)
 3. LLM analysis (final decision with local code context)
 
-Only PRs that pass all stages get PRDs generated.
+Relevant PRs are used as high-signal seed inputs for planning sessions.
 """
 
 from __future__ import annotations
@@ -57,14 +57,17 @@ class ScoringResult:
     final_score: float = 0.0
     signals: dict[str, Any] = field(default_factory=dict)
     
-    def should_generate_prd(self) -> bool:
-        """Determine if this PR should get a PRD generated."""
-        # Only generate PRD for high-confidence implement decisions
+    def should_seed_plan(self) -> bool:
+        """Determine if this PR is a strong plan-seed candidate."""
         if self.llm_decision == "implement" and self.llm_confidence >= 0.7:
             return True
         if self.llm_decision == "partial" and self.llm_confidence >= 0.8:
             return True
         return False
+
+    def should_generate_prd(self) -> bool:
+        """Backward-compatible alias for legacy callers."""
+        return self.should_seed_plan()
 
 
 def tokenize(text: str) -> set[str]:

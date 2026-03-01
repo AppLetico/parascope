@@ -20,13 +20,13 @@ help:
 	@echo ""
 	@echo "Prscope Workflow Commands"
 	@echo ""
-	@echo "  make run          Incremental: profile -> sync -> evaluate (1 batch) -> prd"
-	@echo "  make run-full     Full: profile -> sync-full -> evaluate-all -> prd"
+	@echo "  make run          Incremental: profile -> sync -> evaluate (planner seed prep)"
+	@echo "  make run-full     Full: profile -> sync-full -> evaluate-all (planner seed prep)"
 	@echo "  make sync         Sync PRs (incremental, only new since last sync)"
 	@echo "  make sync-full    Sync PRs (full, ignores watermark)"
 	@echo "  make evaluate     Evaluate PRs (one batch)"
 	@echo "  make evaluate-all Evaluate all pending PRs (loops until done)"
-	@echo "  make prd          Generate PRD documents"
+	@echo "  make plan-chat    Start interactive discovery mode"
 	@echo "  make digest       Show PR digest"
 	@echo ""
 
@@ -93,18 +93,18 @@ evaluate-all:
 	done
 	@echo "All PRs evaluated"
 
-# Generate PRDs
-prd:
-	$(PYTHON) -m prscope.cli prd
+# Start planning discovery
+plan-chat:
+	$(PYTHON) -m prscope.cli plan chat
 
 # Show digest
 digest:
 	$(PYTHON) -m prscope.cli digest
 
-# Incremental workflow: profile -> sync (incremental) -> evaluate (one batch) -> prd
-run: profile sync evaluate prd
+# Incremental workflow: profile -> sync (incremental) -> evaluate (one batch)
+run: profile sync evaluate
 	@echo "Prscope workflow complete"
 
-# Full workflow: profile -> sync (full) -> evaluate (all) -> prd
-run-full: profile sync-full evaluate-all prd
+# Full workflow: profile -> sync (full) -> evaluate (all)
+run-full: profile sync-full evaluate-all
 	@echo "Prscope full workflow complete"

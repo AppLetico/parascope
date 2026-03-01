@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Generator
+from uuid import uuid4
 
 from .config import get_prscope_dir
 
@@ -99,12 +100,56 @@ CREATE TABLE IF NOT EXISTS artifacts (
     FOREIGN KEY (evaluation_id) REFERENCES evaluations(id)
 );
 
+-- Planning sessions (interactive plan lifecycle)
+CREATE TABLE IF NOT EXISTS planning_sessions (
+    id TEXT PRIMARY KEY,
+    repo_name TEXT NOT NULL,
+    title TEXT NOT NULL,
+    requirements TEXT NOT NULL,
+    status TEXT NOT NULL,
+    seed_type TEXT NOT NULL,
+    seed_ref TEXT,
+    current_round INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+-- Planning conversation turns
+CREATE TABLE IF NOT EXISTS planning_turns (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id TEXT NOT NULL,
+    role TEXT NOT NULL,
+    content TEXT NOT NULL,
+    round INTEGER NOT NULL,
+    major_issues_remaining INTEGER,
+    minor_issues_remaining INTEGER,
+    hard_constraint_violations TEXT,
+    parse_error TEXT,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (session_id) REFERENCES planning_sessions(id)
+);
+
+-- Plan snapshots by round
+CREATE TABLE IF NOT EXISTS plan_versions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id TEXT NOT NULL,
+    round INTEGER NOT NULL,
+    plan_content TEXT NOT NULL,
+    plan_sha TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (session_id) REFERENCES planning_sessions(id)
+);
+
 -- Indexes for common queries
 CREATE INDEX IF NOT EXISTS idx_pr_repo ON pull_requests(repo_id);
 CREATE INDEX IF NOT EXISTS idx_pr_state ON pull_requests(state);
 CREATE INDEX IF NOT EXISTS idx_pr_updated ON pull_requests(updated_at);
 CREATE INDEX IF NOT EXISTS idx_eval_pr ON evaluations(pr_id);
 CREATE INDEX IF NOT EXISTS idx_eval_decision ON evaluations(decision);
+CREATE INDEX IF NOT EXISTS idx_turns_session_round ON planning_turns(session_id, round);
+CREATE INDEX IF NOT EXISTS idx_versions_session_round ON plan_versions(session_id, round);
+CREATE INDEX IF NOT EXISTS idx_sessions_status ON planning_sessions(status);
+CREATE INDEX IF NOT EXISTS idx_sessions_repo ON planning_sessions(repo_name);
 """
 
 
@@ -199,6 +244,50 @@ class Artifact:
     evaluation_id: int
     type: str
     path: str
+    created_at: str
+
+
+@dataclass
+class PlanningSession:
+    """Stored planning session."""
+
+    id: str
+    repo_name: str
+    title: str
+    requirements: str
+    status: str
+    seed_type: str
+    seed_ref: str | None
+    current_round: int
+    created_at: str
+    updated_at: str
+
+
+@dataclass
+class PlanningTurn:
+    """Stored planning conversation turn."""
+
+    id: int | None
+    session_id: str
+    role: str
+    content: str
+    round: int
+    major_issues_remaining: int | None = None
+    minor_issues_remaining: int | None = None
+    hard_constraint_violations: list[str] | None = None
+    parse_error: str | None = None
+    created_at: str = ""
+
+
+@dataclass
+class PlanVersion:
+    """Stored plan snapshot."""
+
+    id: int | None
+    session_id: str
+    round: int
+    plan_content: str
+    plan_sha: str
     created_at: str
 
 
@@ -558,3 +647,254 @@ class Store:
                 (evaluation_id,)
             ).fetchall()
             return [Artifact(**dict(row)) for row in rows]
+
+    # =========================================================================
+    # Planning sessions and versions
+    # =========================================================================
+
+    def _row_to_planning_turn(self, row: sqlite3.Row) -> PlanningTurn:
+        data = dict(row)
+        violations_raw = data.get("hard_constraint_violations")
+        violations: list[str] | None = None
+        if violations_raw:
+            try:
+                loaded = json.loads(violations_raw)
+                if isinstance(loaded, list):
+                    violations = [str(v) for v in loaded]
+            except json.JSONDecodeError:
+                violations = None
+
+        return PlanningTurn(
+            id=data.get("id"),
+            session_id=data["session_id"],
+            role=data["role"],
+            content=data["content"],
+            round=data["round"],
+            major_issues_remaining=data.get("major_issues_remaining"),
+            minor_issues_remaining=data.get("minor_issues_remaining"),
+            hard_constraint_violations=violations,
+            parse_error=data.get("parse_error"),
+            created_at=data.get("created_at", ""),
+        )
+
+    def create_planning_session(
+        self,
+        repo_name: str,
+        title: str,
+        requirements: str,
+        seed_type: str,
+        seed_ref: str | None = None,
+        status: str = "drafting",
+        session_id: str | None = None,
+    ) -> PlanningSession:
+        """Create and persist a planning session."""
+        sid = session_id or str(uuid4())
+        now = self._now()
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO planning_sessions
+                    (id, repo_name, title, requirements, status, seed_type, seed_ref,
+                     current_round, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (sid, repo_name, title, requirements, status, seed_type, seed_ref, 0, now, now),
+            )
+            row = conn.execute(
+                "SELECT * FROM planning_sessions WHERE id = ?",
+                (sid,),
+            ).fetchone()
+            return PlanningSession(**dict(row))
+
+    def get_planning_session(self, session_id: str) -> PlanningSession | None:
+        """Get a planning session by id."""
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM planning_sessions WHERE id = ?",
+                (session_id,),
+            ).fetchone()
+            return PlanningSession(**dict(row)) if row else None
+
+    def list_planning_sessions(
+        self,
+        repo_name: str | None = None,
+        status: str | None = None,
+        limit: int = 50,
+    ) -> list[PlanningSession]:
+        """List planning sessions with optional filters."""
+        query = "SELECT * FROM planning_sessions WHERE 1=1"
+        params: list[Any] = []
+        if repo_name is not None:
+            query += " AND repo_name = ?"
+            params.append(repo_name)
+        if status is not None:
+            query += " AND status = ?"
+            params.append(status)
+        query += " ORDER BY updated_at DESC LIMIT ?"
+        params.append(limit)
+
+        with self._connect() as conn:
+            rows = conn.execute(query, params).fetchall()
+            return [PlanningSession(**dict(row)) for row in rows]
+
+    def update_planning_session(
+        self,
+        session_id: str,
+        *,
+        status: str | None = None,
+        requirements: str | None = None,
+        current_round: int | None = None,
+        seed_ref: str | None = None,
+    ) -> PlanningSession:
+        """Update mutable fields on a planning session."""
+        updates: list[str] = []
+        params: list[Any] = []
+        if status is not None:
+            updates.append("status = ?")
+            params.append(status)
+        if requirements is not None:
+            updates.append("requirements = ?")
+            params.append(requirements)
+        if current_round is not None:
+            updates.append("current_round = ?")
+            params.append(current_round)
+        if seed_ref is not None:
+            updates.append("seed_ref = ?")
+            params.append(seed_ref)
+
+        updates.append("updated_at = ?")
+        params.append(self._now())
+        params.append(session_id)
+
+        with self._connect() as conn:
+            conn.execute(
+                f"UPDATE planning_sessions SET {', '.join(updates)} WHERE id = ?",
+                params,
+            )
+            row = conn.execute(
+                "SELECT * FROM planning_sessions WHERE id = ?",
+                (session_id,),
+            ).fetchone()
+            if row is None:
+                raise ValueError(f"Planning session not found: {session_id}")
+            return PlanningSession(**dict(row))
+
+    def add_planning_turn(
+        self,
+        session_id: str,
+        role: str,
+        content: str,
+        round_number: int,
+        major_issues_remaining: int | None = None,
+        minor_issues_remaining: int | None = None,
+        hard_constraint_violations: list[str] | None = None,
+        parse_error: str | None = None,
+    ) -> PlanningTurn:
+        """Insert a planning conversation turn."""
+        violations_json = json.dumps(hard_constraint_violations or [])
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO planning_turns
+                    (session_id, role, content, round, major_issues_remaining,
+                     minor_issues_remaining, hard_constraint_violations, parse_error, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    session_id,
+                    role,
+                    content,
+                    round_number,
+                    major_issues_remaining,
+                    minor_issues_remaining,
+                    violations_json,
+                    parse_error,
+                    self._now(),
+                ),
+            )
+            row = conn.execute("SELECT * FROM planning_turns WHERE id = last_insert_rowid()").fetchone()
+            return self._row_to_planning_turn(row)
+
+    def get_planning_turns(self, session_id: str, round_number: int | None = None) -> list[PlanningTurn]:
+        """Fetch planning turns for a session."""
+        with self._connect() as conn:
+            if round_number is None:
+                rows = conn.execute(
+                    """
+                    SELECT * FROM planning_turns
+                    WHERE session_id = ?
+                    ORDER BY round ASC, id ASC
+                    """,
+                    (session_id,),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    """
+                    SELECT * FROM planning_turns
+                    WHERE session_id = ? AND round = ?
+                    ORDER BY id ASC
+                    """,
+                    (session_id, round_number),
+                ).fetchall()
+            return [self._row_to_planning_turn(row) for row in rows]
+
+    def get_latest_critic_turn(self, session_id: str) -> PlanningTurn | None:
+        """Get the latest critic turn for semantic convergence checks."""
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT * FROM planning_turns
+                WHERE session_id = ? AND role = 'critic'
+                ORDER BY id DESC
+                LIMIT 1
+                """,
+                (session_id,),
+            ).fetchone()
+            return self._row_to_planning_turn(row) if row else None
+
+    def save_plan_version(
+        self,
+        session_id: str,
+        round_number: int,
+        plan_content: str,
+        plan_sha: str,
+    ) -> PlanVersion:
+        """Persist a plan snapshot."""
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO plan_versions (session_id, round, plan_content, plan_sha, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (session_id, round_number, plan_content, plan_sha, self._now()),
+            )
+            row = conn.execute("SELECT * FROM plan_versions WHERE id = last_insert_rowid()").fetchone()
+            return PlanVersion(**dict(row))
+
+    def get_plan_versions(self, session_id: str, limit: int = 20) -> list[PlanVersion]:
+        """Get latest plan versions for a session."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM plan_versions
+                WHERE session_id = ?
+                ORDER BY round DESC, id DESC
+                LIMIT ?
+                """,
+                (session_id, limit),
+            ).fetchall()
+            return [PlanVersion(**dict(row)) for row in rows]
+
+    def get_plan_version(self, session_id: str, round_number: int) -> PlanVersion | None:
+        """Get a specific plan version by round."""
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT * FROM plan_versions
+                WHERE session_id = ? AND round = ?
+                ORDER BY id DESC
+                LIMIT 1
+                """,
+                (session_id, round_number),
+            ).fetchone()
+            return PlanVersion(**dict(row)) if row else None

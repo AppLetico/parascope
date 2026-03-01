@@ -1,20 +1,20 @@
 """
-Prscope CLI - Monitor upstream GitHub PRs and generate implementation PRDs.
+Prscope CLI - Planning-first workflow with upstream PR intelligence.
 
 Commands:
     init      - Initialize Prscope in current repository
     profile   - Scan and profile local codebase
-    sync      - Fetch PRs from upstream repositories
-    evaluate  - Score PRs for relevance
-    prd       - Generate PRD documents
-    digest    - Summary of relevant PRs
-    history   - View evaluation history
+    upstream  - Upstream sync/evaluate/history utilities
+    plan      - Interactive planning (PRD + RFC generation)
+    repos     - Repo profile management
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 import click
@@ -34,14 +34,13 @@ from . import __version__
 from .config import (
     PrscopeConfig,
     get_repo_root,
-    get_prscope_dir,
     ensure_prscope_dir,
 )
 from .store import Store
-from .profile import build_profile, hash_profile, get_git_head_sha
+from .profile import build_profile, hash_profile
 from .github import GitHubClient, sync_repo_prs, GitHubAPIError
 from .scoring import evaluate_pr
-from .prd import generate_prd, get_prd_dir
+from .planning.runtime import PlanningRuntime
 
 
 # Sample configuration files
@@ -91,6 +90,22 @@ llm:
   # model: ollama/llama2 # Local Ollama
   temperature: 0.2       # Lower = more consistent decisions
   max_tokens: 3000
+
+# Planning mode configuration (PRD + RFC generation)
+planning:
+  author_model: gpt-4o
+  critic_model: claude-3-5-sonnet-20241022
+  max_adversarial_rounds: 10
+  convergence_threshold: 0.05
+  output_dir: ./plans
+  require_verified_file_references: false
+
+# Optional multi-repo profiles
+# repos:
+#   my-repo:
+#     path: ~/workspace/my-repo
+#     upstream:
+#       - repo: owner/upstream-repo
 """
 
 SAMPLE_FEATURES = """\
@@ -165,8 +180,20 @@ features:
 @click.group()
 @click.version_option(version=__version__)
 def main():
-    """Prscope - Monitor upstream GitHub PRs and generate implementation PRDs."""
+    """Prscope - Planning-first tool with upstream PR intelligence."""
     pass
+
+
+def _warn_legacy_command(old: str, new: str) -> None:
+    click.echo(
+        f"⚠️  Deprecated command `{old}`. Please use `{new}` instead.",
+        err=True,
+    )
+
+
+@main.group(name="upstream")
+def upstream_group() -> None:
+    """Upstream PR ingestion and evaluation commands."""
 
 
 @main.command()
@@ -212,8 +239,9 @@ def init(force: bool):
         gitignore_path.write_text(gitignore_entry)
         click.echo(f"  Created: {gitignore_path}")
     
-    # Create env.example if not exists
+    # Create env templates if not exists
     env_example_path = repo_root / "env.example"
+    env_sample_path = repo_root / "env.sample"
     if not env_example_path.exists() or force:
         # Copy from package
         import importlib.resources
@@ -225,6 +253,11 @@ def init(force: bool):
                 click.echo(f"  Created: {env_example_path}")
         except Exception:
             pass
+    if not env_sample_path.exists() or force:
+        pkg_env_sample = Path(__file__).parent.parent / "env.sample"
+        if pkg_env_sample.exists():
+            env_sample_path.write_text(pkg_env_sample.read_text())
+            click.echo(f"  Created: {env_sample_path}")
     
     click.echo("\nPrscope initialized! Next steps:")
     click.echo("  1. Edit prscope.yml to add upstream repositories")
@@ -232,6 +265,8 @@ def init(force: bool):
     click.echo("  3. Set GITHUB_TOKEN environment variable")
     click.echo("  4. Run: prscope profile")
     click.echo("  5. Run: prscope sync")
+    click.echo("  6. Run: prscope evaluate")
+    click.echo("  7. Start planning: prscope plan chat")
 
 
 @main.command()
@@ -281,14 +316,22 @@ def profile(as_json: bool):
         click.echo(f"  JS imports: {stats['js_imports']}")
 
 
-@main.command()
+@main.command(hidden=True)
 @click.option("--repo", help="Sync specific repository (owner/repo)")
 @click.option("--state", default=None, help="PR state filter (merged, open, closed, all)")
 @click.option("--max-prs", default=None, type=int, help="Maximum PRs to fetch")
 @click.option("--since", default=None, help="Only fetch PRs after date (ISO date or 90d/6m/1y)")
 @click.option("--full", is_flag=True, help="Full sync (ignore incremental watermark)")
 @click.option("--no-files", is_flag=True, help="Skip fetching file lists")
-def sync(repo: str | None, state: str | None, max_prs: int | None, since: str | None, full: bool, no_files: bool):
+def sync(
+    repo: str | None,
+    state: str | None,
+    max_prs: int | None,
+    since: str | None,
+    full: bool,
+    no_files: bool,
+    warn_legacy: bool = True,
+):
     """Fetch PRs from upstream repositories.
     
     By default, uses incremental sync (only PRs newer than last sync).
@@ -301,6 +344,9 @@ def sync(repo: str | None, state: str | None, max_prs: int | None, since: str | 
         prscope sync --since 2024-01-01 # Since specific date
         prscope sync --full             # Ignore watermark, use --since window
     """
+    if warn_legacy:
+        _warn_legacy_command("prscope sync", "prscope upstream sync")
+
     repo_root = get_repo_root()
     config = PrscopeConfig.load(repo_root)
     
@@ -392,13 +438,20 @@ def sync(repo: str | None, state: str | None, max_prs: int | None, since: str | 
     click.echo(f"{'═' * 60}")
 
 
-@main.command()
+@main.command(hidden=True)
 @click.option("--repo", help="Evaluate PRs from specific repository")
 @click.option("--pr", "pr_number", type=int, help="Evaluate specific PR number")
 @click.option("--batch", default=None, type=int, help="Max PRs to evaluate (limits LLM calls)")
 @click.option("--force", is_flag=True, help="Re-evaluate even if already done")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def evaluate(repo: str | None, pr_number: int | None, batch: int | None, force: bool, as_json: bool):
+def evaluate(
+    repo: str | None,
+    pr_number: int | None,
+    batch: int | None,
+    force: bool,
+    as_json: bool,
+    warn_legacy: bool = True,
+):
     """Evaluate PRs for relevance using multi-stage analysis.
     
     Uses 3-stage pipeline:
@@ -413,6 +466,9 @@ def evaluate(repo: str | None, pr_number: int | None, batch: int | None, force: 
         prscope evaluate --pr 123      # Evaluate specific PR
         prscope evaluate --force       # Re-evaluate all
     """
+    if warn_legacy:
+        _warn_legacy_command("prscope evaluate", "prscope upstream evaluate")
+
     config = PrscopeConfig.load(get_repo_root())
     local_repo_path = config.get_local_repo_path()
     store = Store()
@@ -511,7 +567,7 @@ def evaluate(repo: str | None, pr_number: int | None, batch: int | None, force: 
                 "llm_reasoning": result.llm_reasoning,
                 "matched_features": result.matched_features,
                 "has_existing_impl": result.has_existing_implementation,
-                "should_prd": result.should_generate_prd(),
+                "should_seed_plan": result.should_seed_plan(),
             })
             
             if not as_json:
@@ -536,7 +592,7 @@ def evaluate(repo: str | None, pr_number: int | None, batch: int | None, force: 
         implement = [r for r in evaluated if r["llm_decision"] == "implement"]
         partial = [r for r in evaluated if r["llm_decision"] == "partial"]
         skip_prs = [r for r in evaluated if r["llm_decision"] == "skip"]
-        prd_ready = [r for r in evaluated if r["should_prd"]]
+        plan_seed_ready = [r for r in evaluated if r["should_seed_plan"]]
         
         click.echo(f"\n{'═' * 60}")
         click.echo(f"📊 Evaluation Summary")
@@ -550,7 +606,7 @@ def evaluate(repo: str | None, pr_number: int | None, batch: int | None, force: 
         click.echo(f"      ✅ Implement: {len(implement)}")
         click.echo(f"      ⚠️  Partial:   {len(partial)}")
         click.echo(f"      ❌ Skip:      {len(skip_prs)}")
-        click.echo(f"      📝 PRD-ready: {len(prd_ready)}")
+        click.echo(f"      🗺️  Plan-seed ready: {len(plan_seed_ready)}")
         
         if implement:
             click.echo(f"\n{'─' * 60}")
@@ -575,60 +631,20 @@ def evaluate(repo: str | None, pr_number: int | None, batch: int | None, force: 
         if batch_limited > 0:
             click.echo(f"\n💡 Tip: Run `prscope evaluate` again to process {batch_limited} more PRs")
         
-        if prd_ready:
-            click.echo(f"\n💡 Tip: Run `prscope prd` to generate {len(prd_ready)} PRD document(s)")
+        if plan_seed_ready:
+            click.echo(
+                "\n💡 Tip: seed planning directly from upstream context with:\n"
+                "   `prscope plan start --from-pr <owner/repo> <pr-number>`"
+            )
 
 
-@main.command()
-@click.option("--repo", help="Generate PRDs for specific repository")
-@click.option("--pr", "pr_number", type=int, help="Generate PRD for specific PR")
-@click.option("--all", "include_all", is_flag=True, help="Include all evaluated PRs (not just high-confidence)")
-@click.option("--min-confidence", default=0.7, help="Minimum LLM confidence to generate PRD")
-def prd(repo: str | None, pr_number: int | None, include_all: bool, min_confidence: float):
-    """Generate PRD documents for high-confidence relevant PRs."""
-    repo_root = get_repo_root()
-    config = PrscopeConfig.load(repo_root)
-    store = Store()
-    
-    # Find PR if specified by number
-    pr_id = None
-    if pr_number:
-        prs = store.list_pull_requests()
-        for p in prs:
-            if p.number == pr_number:
-                pr_id = p.id
-                break
-        if not pr_id:
-            click.echo(f"PR #{pr_number} not found in database")
-            sys.exit(1)
-    
-    click.echo(f"Generating PRDs (min confidence: {min_confidence:.0%})...")
-    
-    generated = generate_prd(
-        store=store,
-        config=config,
-        pr_id=pr_id,
-        repo_name=repo,
-        min_confidence=min_confidence,
-        include_all=include_all,
-    )
-    
-    if generated:
-        click.echo(f"\nGenerated {len(generated)} PRD(s):")
-        for path in generated:
-            click.echo(f"  {path}")
-    else:
-        click.echo("\nNo PRDs generated.")
-        click.echo("PRDs are only generated for PRs with:")
-        click.echo(f"  - LLM decision: 'implement' and confidence >= {min_confidence:.0%}")
-        click.echo("  - Use --all to include lower confidence PRs")
-
-
-@main.command()
+@main.command(hidden=True)
 @click.option("--limit", default=10, help="Number of PRs to show")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def digest(limit: int, as_json: bool):
+def digest(limit: int, as_json: bool, warn_legacy: bool = True):
     """Show summary of relevant PRs."""
+    if warn_legacy:
+        _warn_legacy_command("prscope digest", "prscope upstream digest")
     store = Store()
     
     # Get recent relevant evaluations
@@ -675,12 +691,14 @@ def digest(limit: int, as_json: bool):
             click.echo()
 
 
-@main.command()
+@main.command(hidden=True)
 @click.option("--limit", default=20, help="Number of evaluations to show")
 @click.option("--decision", type=click.Choice(["relevant", "maybe", "skip"]), help="Filter by decision")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def history(limit: int, decision: str | None, as_json: bool):
+def history(limit: int, decision: str | None, as_json: bool, warn_legacy: bool = True):
     """View evaluation history."""
+    if warn_legacy:
+        _warn_legacy_command("prscope history", "prscope upstream history")
     store = Store()
     
     evaluations = store.list_evaluations(decision=decision, limit=limit)
@@ -719,6 +737,345 @@ def history(limit: int, decision: str | None, as_json: bool):
             click.echo(f"    Features: {', '.join(item['matched_features']) or 'none'}")
             click.echo(f"    Date: {item['created_at']}")
             click.echo()
+
+
+@upstream_group.command("sync")
+@click.option("--repo", help="Sync specific repository (owner/repo)")
+@click.option("--state", default=None, help="PR state filter (merged, open, closed, all)")
+@click.option("--max-prs", default=None, type=int, help="Maximum PRs to fetch")
+@click.option("--since", default=None, help="Only fetch PRs after date (ISO date or 90d/6m/1y)")
+@click.option("--full", is_flag=True, help="Full sync (ignore incremental watermark)")
+@click.option("--no-files", is_flag=True, help="Skip fetching file lists")
+def upstream_sync(
+    repo: str | None,
+    state: str | None,
+    max_prs: int | None,
+    since: str | None,
+    full: bool,
+    no_files: bool,
+) -> None:
+    """Fetch upstream PR metadata for planning seeds."""
+    sync(
+        repo=repo,
+        state=state,
+        max_prs=max_prs,
+        since=since,
+        full=full,
+        no_files=no_files,
+        warn_legacy=False,
+    )
+
+
+@upstream_group.command("evaluate")
+@click.option("--repo", help="Evaluate PRs from specific repository")
+@click.option("--pr", "pr_number", type=int, help="Evaluate specific PR number")
+@click.option("--batch", default=None, type=int, help="Max PRs to evaluate (limits LLM calls)")
+@click.option("--force", is_flag=True, help="Re-evaluate even if already done")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def upstream_evaluate(
+    repo: str | None,
+    pr_number: int | None,
+    batch: int | None,
+    force: bool,
+    as_json: bool,
+) -> None:
+    """Score upstream PRs for planning relevance."""
+    evaluate(
+        repo=repo,
+        pr_number=pr_number,
+        batch=batch,
+        force=force,
+        as_json=as_json,
+        warn_legacy=False,
+    )
+
+
+@upstream_group.command("digest")
+@click.option("--limit", default=10, help="Number of PRs to show")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def upstream_digest(limit: int, as_json: bool) -> None:
+    """Summarize high-signal upstream PR candidates."""
+    digest(limit=limit, as_json=as_json, warn_legacy=False)
+
+
+@upstream_group.command("history")
+@click.option("--limit", default=20, help="Number of evaluations to show")
+@click.option("--decision", type=click.Choice(["relevant", "maybe", "skip"]), help="Filter by decision")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def upstream_history(limit: int, decision: str | None, as_json: bool) -> None:
+    """Show stored upstream evaluation history."""
+    history(limit=limit, decision=decision, as_json=as_json, warn_legacy=False)
+
+
+def _load_planning_runtime(repo_name: str | None) -> tuple[PrscopeConfig, Store, PlanningRuntime]:
+    repo_root = get_repo_root()
+    config = PrscopeConfig.load(repo_root)
+    repo_profile = config.resolve_repo(repo_name, cwd=Path.cwd())
+    store = Store()
+    runtime = PlanningRuntime(store=store, config=config, repo=repo_profile)
+    return config, store, runtime
+
+
+def _format_age(path: Path) -> str:
+    if not path.exists():
+        return "never"
+    mtime = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
+    delta = datetime.now(tz=timezone.utc) - mtime
+    minutes = int(delta.total_seconds() // 60)
+    if minutes < 60:
+        return f"{minutes}m ago"
+    hours = minutes // 60
+    if hours < 24:
+        return f"{hours}h ago"
+    days = hours // 24
+    return f"{days}d ago"
+
+
+def _run_tui(runtime: PlanningRuntime, session_id: str) -> None:
+    try:
+        from .tui import PlanningTUI
+    except Exception as exc:  # pragma: no cover
+        raise click.ClickException(
+            "Textual UI is unavailable. Install planning dependencies and retry."
+        ) from exc
+    PlanningTUI(runtime, session_id).run()
+
+
+@main.group(name="repos")
+def repos_group() -> None:
+    """Repository profile utilities."""
+
+
+@repos_group.command("list")
+def repos_list() -> None:
+    """List configured repo profiles."""
+    config = PrscopeConfig.load(get_repo_root())
+    repos = config.list_repos()
+    if not repos:
+        click.echo("No repositories configured.")
+        return
+    click.echo("Name\tPath\tUpstreams\tMemory")
+    for repo in repos:
+        meta_path = repo.memory_dir / "_meta.json"
+        click.echo(
+            f"{repo.name}\t{repo.resolved_path}\t{len(repo.upstream)}\t{_format_age(meta_path)}"
+        )
+
+
+@main.group(name="plan")
+def plan_group() -> None:
+    """Interactive planning commands."""
+
+
+@plan_group.command("start")
+@click.argument("requirements", required=False)
+@click.option("--repo", "repo_name", help="Repo profile name")
+@click.option("--from-pr", "from_pr", nargs=2, type=str, help="Seed from upstream repo + PR number")
+@click.option("--no-tui", is_flag=True, help="Do not launch the interactive TUI")
+@click.option("--rebuild-memory", is_flag=True, help="Force memory rebuild")
+def plan_start(
+    requirements: str | None,
+    repo_name: str | None,
+    from_pr: tuple[str, str] | None,
+    no_tui: bool,
+    rebuild_memory: bool,
+) -> None:
+    """Start a planning session from requirements, PR seed, or discovery chat."""
+    _, _, runtime = _load_planning_runtime(repo_name)
+
+    if from_pr:
+        upstream_repo, pr_num_raw = from_pr
+        session = asyncio.run(
+            runtime.start_from_pr(
+                upstream_repo=upstream_repo,
+                pr_number=int(pr_num_raw),
+                rebuild_memory=rebuild_memory,
+            )
+        )
+    elif requirements:
+        session = asyncio.run(
+            runtime.start_from_requirements(
+                requirements=requirements,
+                rebuild_memory=rebuild_memory,
+            )
+        )
+    else:
+        session, opening = asyncio.run(runtime.start_from_chat(rebuild_memory=rebuild_memory))
+        click.echo(opening)
+
+    click.echo(f"Created planning session: {session.id}")
+    if not no_tui:
+        _run_tui(runtime, session.id)
+
+
+@plan_group.command("chat")
+@click.option("--repo", "repo_name", help="Repo profile name")
+@click.option("--no-tui", is_flag=True, help="Do not launch the interactive TUI")
+@click.option("--rebuild-memory", is_flag=True, help="Force memory rebuild")
+def plan_chat(repo_name: str | None, no_tui: bool, rebuild_memory: bool) -> None:
+    """Start chat-first discovery mode."""
+    _, _, runtime = _load_planning_runtime(repo_name)
+    session, opening = asyncio.run(runtime.start_from_chat(rebuild_memory=rebuild_memory))
+    click.echo(opening)
+    click.echo(f"Created planning session: {session.id}")
+    if not no_tui:
+        _run_tui(runtime, session.id)
+
+
+@plan_group.command("resume")
+@click.argument("session_id")
+@click.option("--repo", "repo_name", help="Optional override for repo profile")
+def plan_resume(session_id: str, repo_name: str | None) -> None:
+    """Resume an existing planning session in the TUI."""
+    config = PrscopeConfig.load(get_repo_root())
+    store = Store()
+    session = store.get_planning_session(session_id)
+    if session is None:
+        raise click.ClickException(f"Session not found: {session_id}")
+    effective_repo = repo_name or session.repo_name
+    repo_profile = config.resolve_repo(effective_repo, cwd=Path.cwd())
+    runtime = PlanningRuntime(store=store, config=config, repo=repo_profile)
+    _run_tui(runtime, session_id)
+
+
+@plan_group.command("list")
+@click.option("--repo", "repo_name", help="Filter sessions by repo profile")
+def plan_list(repo_name: str | None) -> None:
+    """List planning sessions."""
+    store = Store()
+    sessions = store.list_planning_sessions(repo_name=repo_name, limit=200)
+    if not sessions:
+        click.echo("No planning sessions found.")
+        return
+    click.echo("Session ID\tRepo\tStatus\tRound\tTitle")
+    for session in sessions:
+        click.echo(
+            f"{session.id}\t{session.repo_name}\t{session.status}\t"
+            f"{session.current_round}\t{session.title}"
+        )
+
+
+@plan_group.command("export")
+@click.argument("session_id")
+@click.option("--repo", "repo_name", help="Repo profile name")
+def plan_export(session_id: str, repo_name: str | None) -> None:
+    """Export PRD and RFC markdown files."""
+    _, store, runtime = _load_planning_runtime(repo_name)
+    if store.get_planning_session(session_id) is None:
+        raise click.ClickException(f"Session not found: {session_id}")
+    paths = runtime.export(session_id)
+    click.echo(f"Exported:\n- {paths['prd']}\n- {paths['rfc']}\n- {paths['conversation']}")
+
+
+@plan_group.command("diff")
+@click.argument("session_id")
+@click.option("--repo", "repo_name", help="Repo profile name")
+@click.option("--round", "round_number", type=int, default=None, help="Diff specific round against previous")
+def plan_diff(session_id: str, repo_name: str | None, round_number: int | None) -> None:
+    """Show plan diff as unified text."""
+    _, store, runtime = _load_planning_runtime(repo_name)
+    if store.get_planning_session(session_id) is None:
+        raise click.ClickException(f"Session not found: {session_id}")
+    diff_text = runtime.plan_diff(session_id, round_number=round_number)
+    click.echo(diff_text or "No diff available.")
+
+
+@plan_group.command("memory")
+@click.option("--repo", "repo_name", help="Repo profile name")
+@click.option("--rebuild", is_flag=True, help="Force rebuild memory blocks")
+def plan_memory(repo_name: str | None, rebuild: bool) -> None:
+    """Build/show memory blocks for active repo."""
+    _, _, runtime = _load_planning_runtime(repo_name)
+    profile = build_profile(runtime.repo.resolved_path)
+    asyncio.run(runtime.memory.ensure_memory(profile, rebuild=rebuild))
+    click.echo(f"Memory dir: {runtime.repo.memory_dir}")
+    for block in ("architecture", "modules", "patterns", "entrypoints"):
+        path = runtime.repo.memory_dir / f"{block}.md"
+        click.echo(f"- {block}: {path} ({_format_age(path)})")
+
+
+@plan_group.command("manifesto")
+@click.option("--repo", "repo_name", help="Repo profile name")
+@click.option("--edit", "open_editor", is_flag=True, help="Open manifesto in editor")
+def plan_manifesto(repo_name: str | None, open_editor: bool) -> None:
+    """Create or open repo manifesto file."""
+    _, _, runtime = _load_planning_runtime(repo_name)
+    path = runtime.memory.ensure_manifesto()
+    if open_editor:
+        click.edit(filename=str(path))
+    else:
+        click.echo(path)
+
+
+@plan_group.command("validate")
+@click.argument("session_id")
+@click.option("--repo", "repo_name", help="Repo profile name")
+def plan_validate(session_id: str, repo_name: str | None) -> None:
+    """Headless validation for CI."""
+    _, store, runtime = _load_planning_runtime(repo_name)
+    session = store.get_planning_session(session_id)
+    if session is None:
+        raise click.ClickException(f"Session not found: {session_id}")
+    result = asyncio.run(runtime.validate_session(session_id))
+    hard_count = len(result.hard_constraint_violations)
+    major = result.major_issues_remaining
+    if hard_count > 0 and major == 0:
+        click.echo(
+            "FAILED: hard constraint violations only "
+            f"({', '.join(result.hard_constraint_violations)})"
+        )
+        sys.exit(2)
+    if major > 0 or hard_count > 0:
+        click.echo(
+            f"FAILED: {major} major issues, hard violations: "
+            f"{', '.join(result.hard_constraint_violations) or 'none'}"
+        )
+        sys.exit(1)
+    click.echo("Plan validated - 0 major issues, 0 hard constraint violations")
+
+
+@plan_group.command("status")
+@click.argument("session_id")
+@click.option("--repo", "repo_name", help="Repo profile name")
+@click.option("--pr-number", type=int, default=None, help="Merged PR number for drift detection")
+def plan_status(session_id: str, repo_name: str | None, pr_number: int | None) -> None:
+    """Compare planned file refs with merged PR files."""
+    _, store, runtime = _load_planning_runtime(repo_name)
+    session = store.get_planning_session(session_id)
+    if session is None:
+        raise click.ClickException(f"Session not found: {session_id}")
+
+    chosen_pr = pr_number
+    upstream_repo = None
+    if chosen_pr is None and session.seed_ref and "#" in session.seed_ref:
+        upstream_repo, pr_raw = session.seed_ref.rsplit("#", 1)
+        if pr_raw.isdigit():
+            chosen_pr = int(pr_raw)
+
+    if chosen_pr is None:
+        raise click.ClickException("Provide --pr-number or use a session seeded from an upstream PR.")
+    if upstream_repo is None:
+        raise click.ClickException("Session does not include upstream repo name in seed_ref.")
+
+    upstream = store.get_upstream_repo(upstream_repo)
+    if upstream is None:
+        raise click.ClickException(f"Upstream repo not found in DB: {upstream_repo}")
+    pr = store.get_pull_request(upstream.id, chosen_pr)
+    if pr is None:
+        raise click.ClickException(f"PR not found in DB: {upstream_repo}#{chosen_pr}")
+    merged_files = {f.path for f in store.get_pr_files(pr.id)}
+    drift = runtime.status(session_id, merged_pr_files=merged_files)
+
+    click.echo(f"Plan Status: {upstream_repo}#{chosen_pr}")
+    click.echo(f"Implemented as planned: {drift['implemented_count']} files")
+    click.echo(f"Planned but not touched: {drift['missing_count']} files")
+    for item in drift["missing"][:20]:
+        click.echo(f"  - {item}")
+    click.echo(f"Unplanned changes: {drift['unplanned_count']} files")
+    for item in drift["unplanned"][:20]:
+        click.echo(f"  - {item}")
+    if drift["missing_count"] > 0:
+        sys.exit(1)
 
 
 if __name__ == "__main__":

@@ -1,5 +1,5 @@
 # Prscope Configuration
-# Monitor upstream PRs and generate relevant PRDs
+# Planning-first workflow with upstream PR inputs
 
 # Local repository to profile and compare against upstream PRs
 local_repo: ~/workspace/clasper
@@ -39,3 +39,12 @@ llm:
   model: gpt-4o
   temperature: 0.2
   max_tokens: 3000
+
+# Planning mode (Author + Critic)
+planning:
+  author_model: gpt-4o
+  critic_model: claude-3-5-sonnet-20241022
+  max_adversarial_rounds: 10
+  convergence_threshold: 0.05
+  output_dir: ./plans
+  require_verified_file_references: false
