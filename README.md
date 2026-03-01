@@ -63,7 +63,7 @@ Edit `.env` with your keys:
 ```bash
 GITHUB_TOKEN=github_pat_your_token_here
 OPENAI_API_KEY=sk-your-openai-key
-ANTHROPIC_API_KEY=sk-ant-your-anthropic-key  # for critic model
+# ANTHROPIC_API_KEY=sk-ant-your-anthropic-key  # optional — only if using a Claude model
 ```
 
 ### 2. Initialize in your repo
@@ -77,33 +77,51 @@ This creates `prscope.yml`, `prscope.features.yml`, and `.prscope/` in your repo
 
 ### 3. Configure `prscope.yml`
 
-Minimal working config:
+`prscope init` creates a `prscope.yml` — edit the planning section at minimum:
 
 ```yaml
-local_repo: .   # path to repo (default: current directory)
+local_repo: .   # path to your repo (default: current directory)
 
-# Optional: upstream repos to monitor for planning seeds
+planning:
+  author_model: gpt-4o        # drafts and refines the plan
+  critic_model: gpt-4o-mini   # stress-tests it (same provider = one key)
+  output_dir: ./plans
+
+# Optional: seed plans from upstream GitHub PRs
 upstream:
   - repo: owner/upstream-repo
-
-# Planning mode settings
-planning:
-  author_model: gpt-4o
-  critic_model: claude-3-5-sonnet-20241022
-  output_dir: ./plans
 ```
 
-### 4. Build codebase memory and start planning
+> **Both models can be any LiteLLM-supported string.** Using two OpenAI models means you only need `OPENAI_API_KEY`. Swap in `claude-3-5-sonnet-20241022` for the critic if you want cross-provider adversarial tension.
+
+### 4. (Optional) Define your architecture constraints
+
+`prscope init` also creates `.prscope/manifesto.md` — a plain markdown file where you document principles and machine-readable constraints the Critic will enforce every round:
+
+```yaml
+# inside .prscope/manifesto.md
+constraints:
+  - id: C-001
+    text: "No synchronous I/O on the main thread"
+    severity: hard    # blocks approval and CI
+  - id: C-002
+    text: "Prefer stdlib over new dependencies"
+    severity: soft    # advisory only
+```
+
+Skip this entirely if you don't need governance — it's optional. Edit it later with `prscope plan manifesto --edit`.
+
+### 5. Build codebase memory and start planning
 
 ```bash
-# Profile your codebase
+# Scan your codebase into structured memory blocks
 prscope profile
 
 # Start an interactive planning session
 prscope plan chat
 ```
 
-The TUI opens. The Author LLM will ask you clarifying questions, draft a plan, and you can trigger Critic rounds to refine it.
+The TUI opens. The Author LLM asks you clarifying questions, drafts a plan, and you can trigger Critic rounds (`Ctrl+K`) to refine it.
 
 ---
 
@@ -221,29 +239,14 @@ planning:
 
 ## Manifesto Constraints
 
-Create or edit with:
+`.prscope/manifesto.md` is created by `prscope init` and is optional. Add a `constraints:` YAML block to define architecture rules the Critic enforces every round. See the [Quickstart](#4-optional-define-your-architecture-constraints) for the format.
 
-```bash
-prscope plan manifesto --edit
-```
+Severity levels:
+- `hard` — blocks `prscope plan approve` and fails `prscope plan validate` (CI)
+- `soft` — Critic flags but does not block
+- `optional: true` — Critic notes in passing, never a violation
 
-Example machine-readable constraint block inside `.prscope/manifesto.md`:
-
-```yaml
-constraints:
-  - id: C-001
-    text: "No synchronous I/O on the main thread"
-    severity: hard          # hard = blocks approval + CI fail
-  - id: C-002
-    text: "All public APIs must have type annotations"
-    severity: hard
-  - id: C-003
-    text: "Prefer stdlib over new dependencies"
-    severity: soft
-    optional: true          # Critic notes but never flags as violation
-```
-
-The Critic validates all `hard` constraints each round. `prscope plan validate` exits 2 on hard-constraint violations and 1 on major plan issues.
+Edit at any time with `prscope plan manifesto --edit`.
 
 ---
 
@@ -297,7 +300,7 @@ prscope upstream history [--decision ...]  View evaluation history
 |----------|----------|---------|
 | `GITHUB_TOKEN` | For upstream sync | GitHub personal access token |
 | `OPENAI_API_KEY` | If using OpenAI models | `gpt-4o`, `o1`, etc. |
-| `ANTHROPIC_API_KEY` | If using Anthropic models | `claude-3-5-sonnet`, etc. |
+| `ANTHROPIC_API_KEY` | Optional — only if using a Claude model | `claude-3-5-sonnet`, etc. |
 | `GOOGLE_API_KEY` | If using Google models | `gemini-pro`, etc. |
 
 Prscope uses [LiteLLM](https://docs.litellm.ai/docs/providers) — any provider it supports works as `author_model` or `critic_model`. Ollama local models need no API key.

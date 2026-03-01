@@ -41,9 +41,11 @@ llm:
   max_tokens: 3000
 
 # Planning mode (Author + Critic)
+# Both models can be any LiteLLM-supported model — same provider or different.
+# Only set ANTHROPIC_API_KEY if you use a Claude model here.
 planning:
   author_model: gpt-4o
-  critic_model: claude-3-5-sonnet-20241022
+  critic_model: gpt-4o-mini        # or claude-3-5-sonnet-20241022, gemini-1.5-pro, etc.
   max_adversarial_rounds: 10
   convergence_threshold: 0.05
   output_dir: ./plans
