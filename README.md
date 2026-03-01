@@ -1,5 +1,26 @@
 # Prscope
 
+<p align="center">
+  <img src="prscope-banner.png" alt="Prscope" width="100%" />
+</p>
+
+<h2 align="center">Planning-First PR Intelligence</h2>
+
+<p align="center">
+  <b>PLAN. REFINE. SHIP.</b>
+  <br />
+  <i>Turn upstream PRs into structured plans. Interactive TUI, adversarial Author/Critic rounds, and high-quality PRD/RFC outputs.</i>
+</p>
+
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License"></a>
+  <img src="https://img.shields.io/badge/version-0.1.0-blue.svg" alt="Version">
+  <img src="https://img.shields.io/badge/built_with-Python-blue.svg" alt="Python">
+  <img src="https://img.shields.io/badge/status-Alpha-yellow.svg" alt="Status">
+</p>
+
+---
+
 Planning-first PR intelligence for local repositories.
 
 Prscope now treats upstream PR analysis as **input** to an interactive planning system that produces high-quality `PRD.md` and `RFC.md` outputs.
